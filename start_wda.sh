@@ -46,6 +46,13 @@ EOF
 echo "Starting WebDriverAgent on device $UDID ..."
 echo "(First run after a 7-day expiry will take ~60s to rebuild)"
 
+# Start iproxy upfront so the tunnel is ready when WDA comes up
+echo "Starting iproxy port forward (8100)..."
+pkill -f "iproxy 8100" 2>/dev/null || true; sleep 1
+iproxy 8100 8100 > /dev/null 2>&1 &
+IPROXY_PID=$!
+sleep 1
+
 # Start WDA in background
 xcodebuild test-without-building \
   -xctestrun "$XCTESTRUN" \
@@ -55,7 +62,7 @@ WDA_PID=$!
 
 # Wait for WDA HTTP server
 echo -n "Waiting for WDA..."
-for i in $(seq 1 30); do
+for i in $(seq 1 40); do
     sleep 2
     if curl -s --max-time 1 "http://127.0.0.1:8100/status" > /dev/null 2>&1; then
         echo " ready!"
@@ -64,20 +71,13 @@ for i in $(seq 1 30); do
     echo -n "."
 done
 
-# Check if WDA is actually up
-if ! curl -s --max-time 2 "http://127.0.0.1:8100/status" > /dev/null 2>&1; then
-    # Need port forwarding via iproxy
-    echo "Starting iproxy port forward (8100)..."
-    iproxy 8100 8100 > /dev/null 2>&1 &
-    sleep 2
-fi
-
 if curl -s --max-time 3 "http://127.0.0.1:8100/status" > /dev/null 2>&1; then
     echo "WDA is live at http://127.0.0.1:8100"
     echo "Run: python3 tap.py"
 else
     echo "ERROR: WDA did not come up. Check /tmp/wda.log"
     kill $WDA_PID 2>/dev/null
+    kill $IPROXY_PID 2>/dev/null
     exit 1
 fi
 

@@ -22,6 +22,8 @@ import requests
 WDA_URL = "http://127.0.0.1:8100"   # WDA forwarded via iproxy
 # ────────────────────────────────────────────────────────────────────────────
 
+_session_id: str = ""
+
 
 def get_or_create_session() -> str:
     """Create a new WDA session (works on whatever app is on screen)."""
@@ -55,6 +57,24 @@ def tap(session_id: str, x: int, y: int) -> None:
     )
 
 
+def tap_with_retry(x: int, y: int, max_retries: int = 5) -> None:
+    """Tap with automatic session recovery on connection errors."""
+    global _session_id
+    for attempt in range(max_retries):
+        try:
+            tap(_session_id, x, y)
+            return
+        except Exception as e:
+            print(f"\n  [warn] tap failed ({e.__class__.__name__}), retrying {attempt+1}/{max_retries}...")
+            time.sleep(2)
+            try:
+                _session_id = get_or_create_session()
+                print(f"  [info] new session: {_session_id}")
+            except Exception:
+                time.sleep(3)
+    print("\n  [error] gave up after retries — WDA may be down.", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Auto-tap a fixed iPhone screen coordinate.")
     parser.add_argument("--x",        type=int,   default=215,  help="X coordinate in points (default 215)")
@@ -72,15 +92,16 @@ def main():
         print("Make sure start_wda.sh is running first.", file=sys.stderr)
         sys.exit(1)
 
-    sid = get_or_create_session()
-    print(f"Session: {sid}")
+    global _session_id
+    _session_id = get_or_create_session()
+    print(f"Session: {_session_id}")
     print(f"Target : ({args.x}, {args.y})  interval={args.interval}s  count={'∞' if args.count == 0 else args.count}")
     print("Tapping — press Ctrl+C to stop.\n")
 
     tapped = 0
     try:
         while args.count == 0 or tapped < args.count:
-            tap(sid, args.x, args.y)
+            tap_with_retry(args.x, args.y)
             tapped += 1
             print(f"  tap #{tapped}  ({args.x}, {args.y})", end="\r", flush=True)
             if args.count == 0 or tapped < args.count:
