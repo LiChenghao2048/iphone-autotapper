@@ -40,6 +40,17 @@ python3 tap.py --x 701 --y 402 --count 60       # exactly 60 taps
 
 ---
 
+## Controls
+
+While `tap.py` is running in the terminal:
+
+| Key | Action |
+|---|---|
+| `Space` or `p` | Pause / resume tapping |
+| `Ctrl+C` | Stop and exit |
+
+---
+
 ## Options
 
 | Flag | Default | Description |
