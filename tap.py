@@ -11,11 +11,18 @@ Defaults:
     --y 466        vertical coordinate (points)
     --interval 1.0 seconds between taps
     --count 0      0 = tap forever until Ctrl+C
+
+Controls:
+    Space / p      pause / resume
+    Ctrl+C         quit
 """
 
 import argparse
-import time
+import select
 import sys
+import termios
+import time
+import tty
 import requests
 
 # ── Config ───────────────────────────────────────────────────────────────────
@@ -75,6 +82,13 @@ def tap_with_retry(x: int, y: int, max_retries: int = 5) -> None:
     print("\n  [error] gave up after retries — WDA may be down.", file=sys.stderr)
 
 
+def check_keypress() -> str:
+    """Return a pressed key if one is waiting, otherwise empty string."""
+    if select.select([sys.stdin], [], [], 0)[0]:
+        return sys.stdin.read(1)
+    return ""
+
+
 def main():
     parser = argparse.ArgumentParser(description="Auto-tap a fixed iPhone screen coordinate.")
     parser.add_argument("--x",        type=int,   default=215,  help="X coordinate in points (default 215)")
@@ -96,11 +110,28 @@ def main():
     _session_id = get_or_create_session()
     print(f"Session: {_session_id}")
     print(f"Target : ({args.x}, {args.y})  interval={args.interval}s  count={'∞' if args.count == 0 else args.count}")
-    print("Tapping — press Ctrl+C to stop.\n")
+    print("Tapping — press Space/p to pause, Ctrl+C to stop.\n")
 
+    # Put terminal in raw mode so keypresses are read instantly (no Enter needed)
+    old_term = termios.tcgetattr(sys.stdin)
+    tty.setcbreak(sys.stdin)
+
+    paused = False
     tapped = 0
     try:
         while args.count == 0 or tapped < args.count:
+            key = check_keypress()
+            if key in (" ", "p"):
+                paused = not paused
+                if paused:
+                    print("\n  [paused]  press Space/p to resume", flush=True)
+                else:
+                    print("  [resumed]", flush=True)
+
+            if paused:
+                time.sleep(0.1)
+                continue
+
             tap_with_retry(args.x, args.y)
             tapped += 1
             print(f"  tap #{tapped}  ({args.x}, {args.y})", end="\r", flush=True)
@@ -108,6 +139,8 @@ def main():
                 time.sleep(args.interval)
     except KeyboardInterrupt:
         print(f"\n\nStopped after {tapped} tap(s).")
+    finally:
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_term)
 
 
 if __name__ == "__main__":
