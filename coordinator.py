@@ -54,6 +54,7 @@ _pending       = set()       # action indices currently in the queue
 _pending_lock  = threading.Lock()
 _stats         = {}          # action index → {type, scheduled, status}
 _executing     = None        # action index currently being executed
+_executor_busy = False       # True while executor is running an action
 
 _scheduler_threads: list = []
 _executor_thread         = None
@@ -136,16 +137,20 @@ def wda_monitor():
     """Background thread: detect WDA going down and recover automatically."""
     while True:
         time.sleep(10)
-        # Retry a few times to tolerate transient failures during action execution
-        for _ in range(3):
-            if wda_is_up():
-                break
-            time.sleep(2)
-        else:
-            print("[coordinator] WDA down, recovering...")
-            ensure_session()
-            if not _user_paused:
-                _pause_event.set()
+        # Skip check while executor is actively running — WDA must be up
+        if _executor_busy:
+            continue
+        if not wda_is_up():
+            # Retry a few times before declaring WDA down
+            for _ in range(3):
+                time.sleep(2)
+                if _executor_busy or wda_is_up():
+                    break
+            else:
+                print("[coordinator] WDA down, recovering...")
+                ensure_session()
+                if not _user_paused:
+                    _pause_event.set()
 
 
 # ── Parameter resolver ────────────────────────────────────────────────────────
@@ -303,7 +308,7 @@ def scheduler(idx: int, action: dict):
 # ── Executor (single thread) ──────────────────────────────────────────────────
 
 def executor():
-    global _executing
+    global _executing, _executor_busy
     while not _stop_event.is_set():
         _pause_event.wait()
         if _stop_event.is_set():
@@ -315,7 +320,9 @@ def executor():
         with _pending_lock:
             _pending.discard(idx)
         _executing = idx
+        _executor_busy = True
         execute_action(action)
+        _executor_busy = False
         _executing = None
 
 
@@ -323,7 +330,7 @@ def executor():
 
 @app.route("/load", methods=["POST"])
 def load():
-    global _scheduler_threads, _executor_thread, _stats, _executing
+    global _scheduler_threads, _executor_thread, _stats, _executing, _executor_busy
 
     # Stop existing threads
     _stop_event.set()
@@ -344,6 +351,7 @@ def load():
         _pending.clear()
     _stats = {}
     _executing = None
+    _executor_busy = False
     _scheduler_threads = []
 
     script_path = request.json.get("script")
