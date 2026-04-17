@@ -16,24 +16,28 @@ import subprocess
 import sys
 import requests
 
-WDA_URL = "http://127.0.0.1:8100"
-SCALE   = 3   # iPhone 14 Pro Max is a 3× device (1290×2796 px → 430×932 pts)
+WDA_URL         = "http://127.0.0.1:8100"
+COORDINATOR_URL = "http://127.0.0.1:9000"
+SCALE           = 3   # iPhone 14 Pro Max is a 3× device (1290×2796 px → 430×932 pts)
 
 
-def get_session() -> str:
+def take_screenshot_via_coordinator() -> bytes:
+    """Use coordinator's session — won't interrupt running actions."""
+    r = requests.get(f"{COORDINATOR_URL}/screenshot", timeout=10)
+    b64 = r.json()["value"]
+    return base64.b64decode(b64)
+
+
+def take_screenshot_via_wda() -> bytes:
+    """Fallback: create own WDA session (will interrupt coordinator if running)."""
     payload = {"capabilities": {"alwaysMatch": {}}, "desiredCapabilities": {}}
     r = requests.post(f"{WDA_URL}/session", json=payload, timeout=10)
     data = r.json()
     sid = data.get("sessionId") or data.get("value", {}).get("sessionId")
     if not sid:
         raise RuntimeError(f"Could not create WDA session: {data}")
-    return sid
-
-
-def take_screenshot(session_id: str) -> bytes:
-    r = requests.get(f"{WDA_URL}/session/{session_id}/screenshot", timeout=10)
-    b64 = r.json()["value"]
-    return base64.b64decode(b64)
+    r = requests.get(f"{WDA_URL}/session/{sid}/screenshot", timeout=10)
+    return base64.b64decode(r.json()["value"])
 
 
 def main():
@@ -42,15 +46,18 @@ def main():
     parser.add_argument("--open", action="store_true",      help="Open in Preview after saving")
     args = parser.parse_args()
 
-    try:
-        requests.get(f"{WDA_URL}/status", timeout=3)
-    except Exception:
-        print("ERROR: WDA not reachable. Run ./start_wda.sh first.", file=sys.stderr)
-        sys.exit(1)
-
     print("Taking screenshot...")
-    sid  = get_session()
-    data = take_screenshot(sid)
+    try:
+        requests.get(f"{COORDINATOR_URL}/status", timeout=2)
+        data = take_screenshot_via_coordinator()
+        print("(via coordinator — actions not interrupted)")
+    except Exception:
+        try:
+            requests.get(f"{WDA_URL}/status", timeout=3)
+        except Exception:
+            print("ERROR: neither coordinator nor WDA is reachable.", file=sys.stderr)
+            sys.exit(1)
+        data = take_screenshot_via_wda()
 
     with open(args.out, "wb") as f:
         f.write(data)
