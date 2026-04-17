@@ -81,7 +81,7 @@ def main():
 <body>
 <div id="bar">
   <div id="cmd">Hover over the image</div>
-  <div id="hint">Click to lock coordinate · image is {px_w}×{px_h}px · divide by {SCALE} for tap coords</div>
+  <div id="hint">Click to lock coordinate · coordinates already divided by {SCALE}</div>
 </div>
 <div id="wrap">
   <img id="img" src="data:image/png;base64,{b64}" draggable="false">
@@ -115,13 +115,13 @@ wrap.addEventListener('mousemove', e => {{
   const {{dispX, dispY, px, py, tx, ty}} = getCoords(e);
   crossH.style.top  = dispY + 'px';
   crossV.style.left = dispX + 'px';
-  cmd.textContent = `pixel (${{px}}, ${{py}})`;
+  cmd.textContent = `x: ${{tx}}, y: ${{ty}}  (pixel ${{px}}, ${{py}})`;
 }});
 
 wrap.addEventListener('click', e => {{
   const {{px, py, tx, ty}} = getCoords(e);
   const entry = document.createElement('div');
-  entry.innerHTML = `clicked: pixel (${{px}}, ${{py}})`;
+  entry.innerHTML = `clicked: <span>x: ${{tx}}, y: ${{ty}}</span>  (pixel ${{px}}, ${{py}})`;
   log.appendChild(entry);
   fetch('/click?px=' + px + '&py=' + py);
 }});
@@ -137,7 +137,8 @@ wrap.addEventListener('click', e => {{
                 from urllib.parse import urlparse, parse_qs
                 q = parse_qs(urlparse(self.path).query)
                 px, py = q.get("px", ["?"])[0], q.get("py", ["?"])[0]
-                print(f"  pixel ({px}, {py})")
+                tx, ty = int(px) // SCALE, int(py) // SCALE
+                print(f"  x: {tx}, y: {ty}  (pixel {px}, {py})")
                 self.send_response(200); self.end_headers()
             else:
                 self.send_response(200)

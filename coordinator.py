@@ -99,9 +99,23 @@ def get_session() -> str:
     return sid
 
 
+def session_is_valid() -> bool:
+    """Check if the current session is still alive."""
+    if not _session_id:
+        return False
+    try:
+        r = requests.get(f"{WDA_URL}/session/{_session_id}", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 def ensure_session():
-    """Ensure WDA is up and a session is ready. Retries until successful."""
+    """Ensure a valid WDA session exists. Skips if current session is still alive."""
     global _session_id
+    if session_is_valid():
+        _wda_ready.set()
+        return
     _wda_ready.clear()
     while True:
         try:
@@ -121,7 +135,12 @@ def wda_monitor():
     """Background thread: detect WDA going down and recover automatically."""
     while True:
         time.sleep(10)
-        if not wda_is_up():
+        # Retry a few times to tolerate transient failures during action execution
+        for _ in range(3):
+            if wda_is_up():
+                break
+            time.sleep(2)
+        else:
             print("[coordinator] WDA down, recovering...")
             ensure_session()
             if not _user_paused:
@@ -202,27 +221,36 @@ def do_circle(session_id: str, center_x: int, center_y: int, radius: int, durati
     )
 
 
+def execute_single(action: dict, sid: str):
+    """Execute one instance of an action (fresh random values each call)."""
+    t = action["type"]
+    if t == "tap":
+        do_tap(sid, resolve(action["x"]), resolve(action["y"]))
+    elif t == "drag":
+        do_drag(sid,
+                resolve(action["x1"]), resolve(action["y1"]),
+                resolve(action["x2"]), resolve(action["y2"]),
+                resolve(action.get("duration", 500)))
+    elif t == "circle":
+        do_circle(sid,
+                  resolve(action["center_x"]), resolve(action["center_y"]),
+                  resolve(action["radius"]),
+                  resolve(action.get("duration", 1000)))
+
+
 def execute_action(action: dict):
-    """Execute one action against WDA, with automatic session recovery."""
+    """Execute one action (or a burst) against WDA, with session recovery."""
     global _session_id
+    burst = action.get("burst", 1)
+    count = resolve(burst) if isinstance(burst, list) else burst
+
     for attempt in range(5):
         try:
             _wda_ready.wait()
             with _session_lock:
                 sid = _session_id
-            t = action["type"]
-            if t == "tap":
-                do_tap(sid, resolve(action["x"]), resolve(action["y"]))
-            elif t == "drag":
-                do_drag(sid,
-                        resolve(action["x1"]), resolve(action["y1"]),
-                        resolve(action["x2"]), resolve(action["y2"]),
-                        resolve(action.get("duration", 500)))
-            elif t == "circle":
-                do_circle(sid,
-                          resolve(action["center_x"]), resolve(action["center_y"]),
-                          resolve(action["radius"]),
-                          resolve(action.get("duration", 1000)))
+            for _ in range(count):
+                execute_single(action, sid)
             return
         except Exception as e:
             print(f"[executor] Failed ({e.__class__.__name__}), retry {attempt+1}/5")

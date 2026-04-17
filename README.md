@@ -83,7 +83,8 @@ actions:
 | `center_x`, `center_y`, `radius` | circle | Circle geometry |
 | `duration` | drag, circle | Gesture duration in ms |
 | `interval` | all | Seconds between repetitions |
-| `count` | all | Repetitions — 0 = forever |
+| `burst` | all | Repetitions per cycle before waiting for `interval` — each rep gets fresh random values — default 1 |
+| `count` | all | Total cycles — 0 = forever |
 
 ---
 
