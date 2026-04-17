@@ -1,0 +1,29 @@
+# iPhone action script
+# Run with: python3 control.py start script.yaml
+#
+# Action types: tap, drag, circle
+# count: 0 = run forever
+
+actions:
+  - type: tap
+    x: 701
+    y: 402
+    interval: 1.0   # seconds between taps
+    count: 0        # 0 = forever
+
+  # - type: drag
+  #   x1: 100
+  #   y1: 400
+  #   x2: 100
+  #   y2: 200
+  #   duration: 500   # ms to complete the drag gesture
+  #   interval: 3.0
+  #   count: 0
+
+  # - type: circle
+  #   center_x: 400
+  #   center_y: 400
+  #   radius: 100
+  #   duration: 1000  # ms to complete one full circle
+  #   interval: 0.5
+  #   count: 0

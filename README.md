@@ -22,43 +22,68 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
 
 ## Every-session startup
 
-**Terminal 1 — start WDA (keep open):**
+**Terminal 1 — coordinator (manages WDA automatically, keep open):**
 ```bash
 cd ~/Claude_Project/iphone-autotapper
-./start_wda.sh
+python3 coordinator.py
 ```
-Wait for: `WDA is live at http://127.0.0.1:8100`
+Wait for: `Ready — listening on http://localhost:9000`
 
-**Terminal 2 — tap:**
+**Terminal 2 — run a script:**
 ```bash
-python3 tap.py --x 701 --y 402            # tap forever at 1s interval
-python3 tap.py --x 701 --y 402 --interval 0.5   # faster
-python3 tap.py --x 701 --y 402 --count 60       # exactly 60 taps
+python3 control.py start script.yaml
 ```
 
-`Ctrl+C` to stop.
+**Terminal 3 (on demand) — control:**
+```bash
+python3 control.py pause
+python3 control.py resume
+python3 control.py status
+python3 control.py stop
+```
 
 ---
 
-## Controls
+## Script format
 
-While `tap.py` is running in the terminal:
+Actions are defined in `script.yaml`. All actions run concurrently, each at its own interval.
 
-| Key | Action |
-|---|---|
-| `Space` or `p` | Pause / resume tapping |
-| `Ctrl+C` | Stop and exit |
+```yaml
+actions:
+  - type: tap
+    x: 701
+    y: 402
+    interval: 1.0   # seconds between taps
+    count: 0        # 0 = run forever
 
----
+  - type: drag
+    x1: 100
+    y1: 400
+    x2: 100
+    y2: 200
+    duration: 500   # ms to complete the drag gesture
+    interval: 3.0
+    count: 10
 
-## Options
+  - type: circle
+    center_x: 400
+    center_y: 400
+    radius: 100
+    duration: 1000  # ms to complete one full circle
+    interval: 0.5
+    count: 0
+```
 
-| Flag | Default | Description |
+### Action parameters
+
+| Parameter | Applies to | Description |
 |---|---|---|
-| `--x` | 215 | Horizontal coordinate (logical points) |
-| `--y` | 466 | Vertical coordinate (logical points) |
-| `--interval` | 1.0 | Seconds between taps |
-| `--count` | 0 | Taps to perform — 0 = run forever |
+| `x`, `y` | tap | Tap coordinate (logical points) |
+| `x1`, `y1`, `x2`, `y2` | drag | Start and end coordinates |
+| `center_x`, `center_y`, `radius` | circle | Circle geometry |
+| `duration` | drag, circle | Gesture duration in ms |
+| `interval` | all | Seconds between repetitions |
+| `count` | all | Repetitions — 0 = forever |
 
 ---
 
