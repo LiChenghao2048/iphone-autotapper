@@ -53,6 +53,7 @@ _action_queue  = queue.Queue()
 _pending       = set()       # action indices currently in the queue
 _pending_lock  = threading.Lock()
 _stats         = {}          # action index → {type, scheduled, status}
+_executing     = None        # action index currently being executed
 
 _scheduler_threads: list = []
 _executor_thread         = None
@@ -302,6 +303,7 @@ def scheduler(idx: int, action: dict):
 # ── Executor (single thread) ──────────────────────────────────────────────────
 
 def executor():
+    global _executing
     while not _stop_event.is_set():
         _pause_event.wait()
         if _stop_event.is_set():
@@ -312,14 +314,16 @@ def executor():
             continue
         with _pending_lock:
             _pending.discard(idx)
+        _executing = idx
         execute_action(action)
+        _executing = None
 
 
 # ── HTTP API ──────────────────────────────────────────────────────────────────
 
 @app.route("/load", methods=["POST"])
 def load():
-    global _scheduler_threads, _executor_thread, _stats
+    global _scheduler_threads, _executor_thread, _stats, _executing
 
     # Stop existing threads
     _stop_event.set()
@@ -339,6 +343,7 @@ def load():
     with _pending_lock:
         _pending.clear()
     _stats = {}
+    _executing = None
     _scheduler_threads = []
 
     script_path = request.json.get("script")
@@ -391,10 +396,15 @@ def stop():
 @app.route("/status", methods=["GET"])
 def status():
     state = "paused" if not _pause_event.is_set() else "running"
+    current = None
+    if _executing is not None:
+        a = _stats.get(_executing, {})
+        current = {"index": _executing, "type": a.get("type")}
     return jsonify({
         "state":   state,
         "wda":     "up" if wda_is_up() else "down",
         "session": _session_id,
+        "current": current,
         "actions": _stats,
     })
 
