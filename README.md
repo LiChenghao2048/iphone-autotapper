@@ -25,15 +25,15 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
 **Terminal 1 — start WDA (keep open):**
 ```bash
 cd ~/Claude_Project/iphone-autotapper
-./start_wda.sh
+./scripts/start_wda.sh
 ```
 Wait for: `WDA is live at http://127.0.0.1:8100`
 
 **Terminal 2 — tap:**
 ```bash
-python3 tap.py --x 701 --y 402            # tap forever at 1s interval
-python3 tap.py --x 701 --y 402 --interval 0.5   # faster
-python3 tap.py --x 701 --y 402 --count 60       # exactly 60 taps
+python3 src/tap.py --x 701 --y 402            # tap forever at 1s interval
+python3 src/tap.py --x 701 --y 402 --interval 0.5   # faster
+python3 src/tap.py --x 701 --y 402 --count 60       # exactly 60 taps
 ```
 
 `Ctrl+C` to stop.
@@ -67,7 +67,7 @@ While `tap.py` is running in the terminal:
 Phone must be on the right screen and orientation before running.
 
 ```bash
-python3 pick_coords.py    # screenshots phone + opens browser picker
+python3 src/pick_coords.py    # screenshots phone + opens browser picker
 ```
 
 Hover over the image to see the ready-to-use `tap.py` command (pixel ÷ scale is automatic).
@@ -76,7 +76,7 @@ Press **R** or click **↻ Refresh** to re-take the screenshot without restartin
 
 To use an existing screenshot instead of capturing a new one:
 ```bash
-python3 pick_coords.py --img screenshot.png
+python3 src/pick_coords.py --img screenshot.png
 ```
 
 Known working coordinates:
@@ -87,7 +87,7 @@ Known working coordinates:
 
 ## 7-day certificate renewal
 
-Free accounts expire every 7 days. When `start_wda.sh` fails, rebuild WDA:
+Free accounts expire every 7 days. When `scripts/start_wda.sh` fails, rebuild WDA:
 
 ```bash
 source .env
@@ -117,14 +117,14 @@ No need to re-trust on the phone after renewal.
 ## Stack
 
 ```
-tap.py ──HTTP──▶ WDA (port 8100)
+src/tap.py ──HTTP──▶ WDA (port 8100)
                      │
                  iproxy (USB)
                      │
                  WDA runner on iPhone (XCUITest)
 ```
 
-- `start_wda.sh` — launches `xcodebuild test-without-building` + `iproxy 8100 8100`
-- `tap.py` — posts W3C pointer actions to WDA HTTP API
-- `find_coords.py` + `pick_coords.py` — screenshot + browser coordinate picker
+- `scripts/start_wda.sh` — launches `xcodebuild test-without-building` + `iproxy 8100 8100`
+- `src/tap.py` — posts W3C pointer actions to WDA HTTP API
+- `src/pick_coords.py` — screenshot + browser coordinate picker
 - WDA built from: `~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/`

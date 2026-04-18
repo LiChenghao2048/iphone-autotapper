@@ -138,13 +138,13 @@ wrap.addEventListener('mousemove', e => {{
   const {{dispX, dispY, px, py, tx, ty}} = getCoords(e);
   crossH.style.top  = dispY + 'px';
   crossV.style.left = dispX + 'px';
-  tapEl.textContent = `python3 tap.py --x ${{tx}} --y ${{ty}}`;
+  tapEl.textContent = `python3 src/tap.py --x ${{tx}} --y ${{ty}}`;
   pxEl.textContent  = `pixel (${{px}}, ${{py}})`;
 }});
 
 wrap.addEventListener('click', e => {{
   const {{px, py, tx, ty}} = getCoords(e);
-  const cmdStr = `python3 tap.py --x ${{tx}} --y ${{ty}}`;
+  const cmdStr = `python3 src/tap.py --x ${{tx}} --y ${{ty}}`;
   const entry = document.createElement('div');
   entry.innerHTML = `<span class="cmd">${{cmdStr}}</span>  <span style="color:#555">· pixel (${{px}}, ${{py}})</span>`;
   logEl.appendChild(entry);
@@ -204,7 +204,7 @@ def make_handler(state: dict, args) -> type:
                 ty = q.get("ty", ["?"])[0]
                 px = q.get("px", ["?"])[0]
                 py = q.get("py", ["?"])[0]
-                print(f"  python3 tap.py --x {tx} --y {ty}   (pixel {px}, {py})")
+                print(f"  python3 src/tap.py --x {tx} --y {ty}   (pixel {px}, {py})")
                 self.send_response(200)
                 self.end_headers()
 
