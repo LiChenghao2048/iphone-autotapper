@@ -55,39 +55,9 @@ def screenshot_to_b64(img_bytes: bytes) -> tuple[str, int, int]:
     return base64.b64encode(buf.getvalue()).decode(), px_w, px_h
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── HTTP handler ──────────────────────────────────────────────────────────────
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Screenshot iPhone and pick tap coordinates interactively.")
-    parser.add_argument("--img", default=None,
-                        help="Use an existing PNG instead of taking a new screenshot")
-    args = parser.parse_args()
-
-    if args.img:
-        with open(args.img, "rb") as f:
-            img_bytes = f.read()
-        print(f"Loaded: {args.img}")
-    else:
-        try:
-            requests.get(f"{WDA_URL}/status", timeout=3)
-        except Exception:
-            print("ERROR: WDA not reachable. Run ./start_wda.sh first.", file=sys.stderr)
-            sys.exit(1)
-        print("Taking screenshot...")
-        img_bytes = take_screenshot()
-        print(f"Screenshot taken  ({len(img_bytes) // 1024} KB)")
-
-    b64, px_w, px_h = screenshot_to_b64(img_bytes)
-    # Mutable container so the handler closure can update it
-    state = {"b64": b64, "px_w": px_w, "px_h": px_h}
-
-    pt_w, pt_h = px_w // SCALE, px_h // SCALE
-    print(f"Size: {px_w}×{px_h} px  →  {pt_w}×{pt_h} pts  (scale {SCALE}×)")
-    print(f"Opening picker at http://127.0.0.1:{PORT}")
-    print("Hover to preview · click to print tap.py command · R to refresh · Ctrl+C to quit\n")
-
-    html_template = """<!DOCTYPE html>
+html_template = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -214,9 +184,15 @@ document.addEventListener('keydown', e => {{
 </body>
 </html>"""
 
-    def build_html():
-        return html_template.format(
-            b64=state["b64"], px_w=state["px_w"], px_h=state["px_h"], SCALE=SCALE)
+
+def build_html(state: dict) -> str:
+    """Render the picker HTML with the current image state."""
+    return html_template.format(
+        b64=state["b64"], px_w=state["px_w"], px_h=state["px_h"], SCALE=SCALE)
+
+
+def make_handler(state: dict, args) -> type:
+    """Return a configured BaseHTTPRequestHandler subclass for the coord picker."""
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a): pass  # silence access log
@@ -256,13 +232,48 @@ document.addEventListener('keydown', e => {{
                     self.end_headers()
 
             else:
-                body = build_html().encode()
+                body = build_html(state).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
                 self.wfile.write(body)
 
-    server = http.server.HTTPServer(("127.0.0.1", PORT), Handler)
+    return Handler
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Screenshot iPhone and pick tap coordinates interactively.")
+    parser.add_argument("--img", default=None,
+                        help="Use an existing PNG instead of taking a new screenshot")
+    args = parser.parse_args()
+
+    if args.img:
+        with open(args.img, "rb") as f:
+            img_bytes = f.read()
+        print(f"Loaded: {args.img}")
+    else:
+        try:
+            requests.get(f"{WDA_URL}/status", timeout=3)
+        except Exception:
+            print("ERROR: WDA not reachable. Run ./start_wda.sh first.", file=sys.stderr)
+            sys.exit(1)
+        print("Taking screenshot...")
+        img_bytes = take_screenshot()
+        print(f"Screenshot taken  ({len(img_bytes) // 1024} KB)")
+
+    b64, px_w, px_h = screenshot_to_b64(img_bytes)
+    # Mutable container so the handler closure can update it
+    state = {"b64": b64, "px_w": px_w, "px_h": px_h}
+
+    pt_w, pt_h = px_w // SCALE, px_h // SCALE
+    print(f"Size: {px_w}×{px_h} px  →  {pt_w}×{pt_h} pts  (scale {SCALE}×)")
+    print(f"Opening picker at http://127.0.0.1:{PORT}")
+    print("Hover to preview · click to print tap.py command · R to refresh · Ctrl+C to quit\n")
+
+    server = http.server.HTTPServer(("127.0.0.1", PORT), make_handler(state, args))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     webbrowser.open(f"http://127.0.0.1:{PORT}")
 
