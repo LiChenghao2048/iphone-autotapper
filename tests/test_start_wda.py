@@ -174,3 +174,40 @@ class TestWaitForWda:
              patch("time.sleep"):
             start_wda.wait_for_wda(url="http://127.0.0.1:8100", timeout=5, interval=0.1)
         mock_get.assert_called_with("http://127.0.0.1:8100/status", timeout=1)
+
+
+# ── main / pkill ───────────────────────────────────────────────────────────────
+
+class TestMainPkill:
+
+    def test_pkill_uses_current_user_flag(self, tmp_path):
+        """pkill must include -u <uid> so it never prompts for a password."""
+        import os
+        env_file = tmp_path / ".env"
+        env_file.write_text("UDID=test-udid\nTEAM=TESTTEAM\n")
+
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return MagicMock(returncode=0)
+
+        fake_proc = MagicMock()
+        fake_proc.wait.return_value = 0
+
+        with patch.object(start_wda.pathlib.Path, "parent", new_callable=lambda: property(lambda self: tmp_path)), \
+             patch("start_wda.load_env", return_value={"UDID": "test-udid", "TEAM": "TESTTEAM"}), \
+             patch("start_wda.build_xctestrun"), \
+             patch("subprocess.run", side_effect=fake_run), \
+             patch("subprocess.Popen", return_value=fake_proc), \
+             patch("builtins.open", MagicMock()), \
+             patch("time.sleep"), \
+             patch("start_wda.wait_for_wda", return_value=True), \
+             patch("sys.exit"):
+            start_wda.main()
+
+        pkill_calls = [c for c in calls if c and c[0] == "pkill"]
+        assert pkill_calls, "pkill was never called"
+        pkill_cmd = pkill_calls[0]
+        assert "-u" in pkill_cmd, "pkill missing -u flag (could prompt for password)"
+        assert str(os.getuid()) in pkill_cmd, "pkill -u should use current user's UID"

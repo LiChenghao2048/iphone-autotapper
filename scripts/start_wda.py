@@ -9,6 +9,7 @@ Usage:
 Reads UDID and TEAM from .env in the project root.
 """
 
+import os
 import pathlib
 import signal
 import subprocess
@@ -125,7 +126,7 @@ def main() -> None:
     print(f"Starting WebDriverAgent on device {udid} ...")
     print("(First run after a 7-day expiry will take ~60s to rebuild)")
 
-    subprocess.run(["pkill", "-f", "iproxy 8100"], capture_output=True)
+    subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "iproxy 8100"], capture_output=True)
     time.sleep(1)
 
     print("Starting iproxy port forward (8100)...")
