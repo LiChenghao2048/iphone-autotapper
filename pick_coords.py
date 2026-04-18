@@ -14,9 +14,11 @@ import argparse
 import base64
 import http.server
 import io
+import json
 import sys
 import threading
 import webbrowser
+from urllib.parse import urlparse, parse_qs
 
 import requests
 from PIL import Image
@@ -216,9 +218,6 @@ document.addEventListener('keydown', e => {{
         return html_template.format(
             b64=state["b64"], px_w=state["px_w"], px_h=state["px_h"], SCALE=SCALE)
 
-    import json
-    from urllib.parse import urlparse, parse_qs
-
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a): pass  # silence access log
 
@@ -236,7 +235,11 @@ document.addEventListener('keydown', e => {{
             elif self.path == "/refresh":
                 print("  Refreshing screenshot...")
                 try:
-                    new_bytes = take_screenshot()
+                    if args.img:
+                        with open(args.img, "rb") as f:
+                            new_bytes = f.read()
+                    else:
+                        new_bytes = take_screenshot()
                     new_b64, new_w, new_h = screenshot_to_b64(new_bytes)
                     state["b64"]  = new_b64
                     state["px_w"] = new_w

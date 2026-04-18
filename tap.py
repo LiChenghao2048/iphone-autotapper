@@ -77,6 +77,8 @@ def tap_with_retry(x: int, y: int) -> None:
         except Exception as e:
             attempt += 1
             print(f"\n  [warn] tap failed ({e.__class__.__name__}), reclaiming session (attempt {attempt})...")
+            if attempt % 10 == 0:
+                print(f"  [warn] still retrying after {attempt} attempts — is WDA up?", file=sys.stderr)
             time.sleep(1)
             try:
                 _session_id = get_or_create_session()
