@@ -4,6 +4,7 @@ Unit tests for scripts/start_wda.py.
 All subprocess calls and network I/O are mocked at the boundary.
 """
 
+import os
 import pathlib
 import sys
 import time
@@ -182,10 +183,6 @@ class TestMainPkill:
 
     def test_pkill_uses_current_user_flag(self, tmp_path):
         """pkill must include -u <uid> so it never prompts for a password."""
-        import os
-        env_file = tmp_path / ".env"
-        env_file.write_text("UDID=test-udid\nTEAM=TESTTEAM\n")
-
         calls = []
 
         def fake_run(cmd, **kwargs):
@@ -195,8 +192,7 @@ class TestMainPkill:
         fake_proc = MagicMock()
         fake_proc.wait.return_value = 0
 
-        with patch.object(start_wda.pathlib.Path, "parent", new_callable=lambda: property(lambda self: tmp_path)), \
-             patch("start_wda.load_env", return_value={"UDID": "test-udid", "TEAM": "TESTTEAM"}), \
+        with patch("start_wda.load_env", return_value={"UDID": "test-udid", "TEAM": "TESTTEAM"}), \
              patch("start_wda.build_xctestrun"), \
              patch("subprocess.run", side_effect=fake_run), \
              patch("subprocess.Popen", return_value=fake_proc), \
