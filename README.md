@@ -25,7 +25,7 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
 **Terminal 1 — start WDA (keep open):**
 ```bash
 cd ~/Claude_Project/iphone-autotapper
-./scripts/start_wda.sh
+python3 scripts/start_wda.py
 ```
 Wait for: `WDA is live at http://127.0.0.1:8100`
 
@@ -87,7 +87,7 @@ Known working coordinates:
 
 ## 7-day certificate renewal
 
-Free accounts expire every 7 days. When `scripts/start_wda.sh` fails, rebuild WDA:
+Free accounts expire every 7 days. When `scripts/start_wda.py` fails, rebuild WDA:
 
 ```bash
 source .env
@@ -124,7 +124,7 @@ src/tap.py ──HTTP──▶ WDA (port 8100)
                  WDA runner on iPhone (XCUITest)
 ```
 
-- `scripts/start_wda.sh` — launches `xcodebuild test-without-building` + `iproxy 8100 8100`
+- `scripts/start_wda.py` — launches `xcodebuild test-without-building` + `iproxy 8100 8100`
 - `src/tap.py` — posts W3C pointer actions to WDA HTTP API
 - `src/pick_coords.py` — screenshot + browser coordinate picker
 - WDA built from: `~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/`
