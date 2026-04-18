@@ -64,18 +64,20 @@ While `tap.py` is running in the terminal:
 
 ## Finding coordinates
 
-Phone must be on the right screen and orientation before screenshotting.
+Phone must be on the right screen and orientation before running.
 
 ```bash
-python3 find_coords.py    # screenshots current phone screen
-python3 pick_coords.py    # opens browser picker → hover to read, click to confirm pixel (x, y)
+python3 pick_coords.py    # screenshots phone + opens browser picker
 ```
 
-Convert pixel → tap coords: divide both numbers by **3**.
+Hover over the image to see the ready-to-use `tap.py` command (pixel ÷ scale is automatic).
+Click to lock in the coordinate — the command is printed in the terminal.
+Press **R** or click **↻ Refresh** to re-take the screenshot without restarting.
 
-**Portrait** pixel (px, py) → `--x $((px/3)) --y $((py/3))`
-
-**Landscape** pixel (px, py) → same: `--x $((px/3)) --y $((py/3))`
+To use an existing screenshot instead of capturing a new one:
+```bash
+python3 pick_coords.py --img screenshot.png
+```
 
 Known working coordinates:
 - Portrait center: `--x 215 --y 466`

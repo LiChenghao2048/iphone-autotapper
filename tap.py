@@ -44,8 +44,8 @@ def get_or_create_session() -> str:
 
 
 def tap(session_id: str, x: int, y: int) -> None:
-    """Perform a single tap at absolute screen coordinates (points)."""
-    requests.post(
+    """Perform a single tap. Raises RuntimeError if WDA rejects the session."""
+    r = requests.post(
         f"{WDA_URL}/session/{session_id}/actions",
         json={
             "actions": [{
@@ -62,24 +62,29 @@ def tap(session_id: str, x: int, y: int) -> None:
         },
         timeout=5,
     )
+    if r.status_code != 200:
+        raise RuntimeError(f"WDA rejected tap (HTTP {r.status_code}) — session stolen?")
 
 
-def tap_with_retry(x: int, y: int, max_retries: int = 5) -> None:
-    """Tap with automatic session recovery on connection errors."""
+def tap_with_retry(x: int, y: int) -> None:
+    """Tap, reclaiming the WDA session whenever it has been stolen."""
     global _session_id
-    for attempt in range(max_retries):
+    attempt = 0
+    while True:
         try:
             tap(_session_id, x, y)
             return
         except Exception as e:
-            print(f"\n  [warn] tap failed ({e.__class__.__name__}), retrying {attempt+1}/{max_retries}...")
-            time.sleep(2)
+            attempt += 1
+            print(f"\n  [warn] tap failed ({e.__class__.__name__}), reclaiming session (attempt {attempt})...")
+            if attempt % 10 == 0:
+                print(f"  [warn] still retrying after {attempt} attempts — is WDA up?", file=sys.stderr)
+            time.sleep(1)
             try:
                 _session_id = get_or_create_session()
-                print(f"  [info] new session: {_session_id}")
+                print(f"  [info] reclaimed session: {_session_id}")
             except Exception:
-                time.sleep(3)
-    print("\n  [error] gave up after retries — WDA may be down.", file=sys.stderr)
+                time.sleep(2)
 
 
 def check_keypress() -> str:
