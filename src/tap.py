@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
 iPhone Auto-Tapper
-Repeatedly taps a fixed screen coordinate on a connected iPhone via WDA HTTP API.
+Repeatedly taps one or more screen coordinates on a connected iPhone via WDA HTTP API.
 
 Usage:
-    python3 tap.py [--x X] [--y Y] [--interval SECS] [--count N]
+    python3 tap.py --coords "X,Y" ["X,Y" ...]  [--interval SECS] [--count N]
+    python3 tap.py [--x X] [--y Y]             [--interval SECS] [--count N]
 
 Defaults:
-    --x 215        horizontal coordinate (points)
-    --y 466        vertical coordinate (points)
-    --interval 1.0 seconds between taps
-    --count 0      0 = tap forever until Ctrl+C
+    --coords       if omitted, falls back to --x/--y
+    --x 215        horizontal coordinate (points)  [single-coord fallback]
+    --y 466        vertical coordinate (points)    [single-coord fallback]
+    --interval 1.0 seconds between cycles (all coords tapped, then sleep)
+    --count 0      0 = cycle forever until Ctrl+C
 
 Controls:
     Space / p      pause / resume
@@ -94,13 +96,33 @@ def check_keypress() -> str:
     return ""
 
 
+def parse_coords(args) -> list:
+    """Return list of (x, y) tuples from --coords, or fall back to --x/--y."""
+    if args.coords:
+        result = []
+        for pair in args.coords:
+            parts = pair.split(",")
+            if len(parts) != 2:
+                raise ValueError(f"Invalid coord '{pair}': expected 'X,Y'")
+            result.append((int(parts[0]), int(parts[1])))
+        return result
+    return [(args.x, args.y)]
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Auto-tap a fixed iPhone screen coordinate.")
-    parser.add_argument("--x",        type=int,   default=215,  help="X coordinate in points (default 215)")
-    parser.add_argument("--y",        type=int,   default=466,  help="Y coordinate in points (default 466)")
-    parser.add_argument("--interval", type=float, default=1.0,  help="Seconds between taps (default 1.0)")
-    parser.add_argument("--count",    type=int,   default=0,    help="Number of taps; 0 = infinite (default 0)")
+    parser = argparse.ArgumentParser(description="Auto-tap one or more iPhone screen coordinates.")
+    parser.add_argument("--coords",   nargs="+",  metavar="X,Y",
+                        help='Coordinates to tap in sequence, e.g. "700,400" "335,250"')
+    parser.add_argument("--x",        type=int,   default=215,  help=argparse.SUPPRESS)
+    parser.add_argument("--y",        type=int,   default=466,  help=argparse.SUPPRESS)
+    parser.add_argument("--interval", type=float, default=1.0,  help="Seconds between cycles (default 1.0)")
+    parser.add_argument("--count",    type=int,   default=0,    help="Number of cycles; 0 = infinite (default 0)")
     args = parser.parse_args()
+
+    try:
+        coords = parse_coords(args)
+    except ValueError as e:
+        parser.error(str(e))
 
     print(f"Connecting to WDA at {WDA_URL} ...")
     try:
@@ -113,8 +135,9 @@ def main():
 
     global _session_id
     _session_id = get_or_create_session()
+    coords_str = "  ".join(f"({x},{y})" for x, y in coords)
     print(f"Session: {_session_id}")
-    print(f"Target : ({args.x}, {args.y})  interval={args.interval}s  count={'∞' if args.count == 0 else args.count}")
+    print(f"Coords : {coords_str}  interval={args.interval}s  count={'∞' if args.count == 0 else args.count}")
     print("Tapping — press Space/p to pause, Ctrl+C to stop.\n")
 
     # Put terminal in raw mode so keypresses are read instantly (no Enter needed)
@@ -122,9 +145,10 @@ def main():
     tty.setcbreak(sys.stdin)
 
     paused = False
+    cycle = 0
     tapped = 0
     try:
-        while args.count == 0 or tapped < args.count:
+        while args.count == 0 or cycle < args.count:
             key = check_keypress()
             if key in (" ", "p"):
                 paused = not paused
@@ -137,13 +161,16 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            tap_with_retry(args.x, args.y)
-            tapped += 1
-            print(f"  tap #{tapped}  ({args.x}, {args.y})", end="\r", flush=True)
-            if args.count == 0 or tapped < args.count:
+            for x, y in coords:
+                tap_with_retry(x, y)
+                tapped += 1
+                print(f"  tap #{tapped}  ({x}, {y})", end="\r", flush=True)
+
+            cycle += 1
+            if args.count == 0 or cycle < args.count:
                 time.sleep(args.interval)
     except KeyboardInterrupt:
-        print(f"\n\nStopped after {tapped} tap(s).")
+        print(f"\n\nStopped after {tapped} tap(s) across {cycle} cycle(s).")
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_term)
 

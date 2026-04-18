@@ -169,6 +169,88 @@ class TestTapWithRetry:
         assert "still retrying" in capsys.readouterr().err
 
 
+# ── parse_coords ─────────────────────────────────────────────────────────────
+
+class TestParseCoords:
+
+    def _args(self, coords=None, x=215, y=466):
+        """Build a minimal args namespace."""
+        ns = MagicMock()
+        ns.coords = coords
+        ns.x = x
+        ns.y = y
+        return ns
+
+    def test_single_coord_string(self):
+        assert tap.parse_coords(self._args(["700,400"])) == [(700, 400)]
+
+    def test_multiple_coord_strings(self):
+        assert tap.parse_coords(self._args(["700,400", "335,250", "860,400"])) == [
+            (700, 400), (335, 250), (860, 400)
+        ]
+
+    def test_falls_back_to_x_y_when_coords_none(self):
+        assert tap.parse_coords(self._args(coords=None, x=100, y=200)) == [(100, 200)]
+
+    def test_falls_back_to_x_y_when_coords_empty(self):
+        assert tap.parse_coords(self._args(coords=[], x=50, y=75)) == [(50, 75)]
+
+    def test_raises_on_missing_y(self):
+        with pytest.raises(ValueError, match="Invalid coord"):
+            tap.parse_coords(self._args(["700"]))
+
+    def test_raises_on_extra_value(self):
+        with pytest.raises(ValueError, match="Invalid coord"):
+            tap.parse_coords(self._args(["700,400,999"]))
+
+
+# ── per-cycle interval ────────────────────────────────────────────────────────
+
+class TestPerCycleInterval:
+    """Sleep must fire once per cycle, not once per tap."""
+
+    def setup_method(self):
+        tap._session_id = "sess"
+
+    def test_sleep_called_once_per_cycle_not_per_tap(self):
+        sleep_calls = []
+
+        with patch("tap.tap_with_retry"), \
+             patch("tap.check_keypress", return_value=""), \
+             patch("tap.get_or_create_session", return_value="sess"), \
+             patch("requests.get") as mock_get, \
+             patch("requests.post"), \
+             patch("termios.tcgetattr", return_value=[]), \
+             patch("termios.tcsetattr"), \
+             patch("tty.setcbreak"), \
+             patch("time.sleep", side_effect=lambda s: sleep_calls.append(s)), \
+             patch("sys.argv", ["tap.py", "--coords", "700,400", "335,250", "--count", "2"]):
+            mock_get.return_value.json.return_value = {"value": {"ready": True}}
+            tap.main()
+
+        # 2 cycles, 2 coords each → 4 taps, but sleep only called once
+        # (after cycle 1; cycle 2 is last so no trailing sleep)
+        assert sleep_calls.count(1.0) == 1
+
+    def test_sleep_uses_interval_arg(self):
+        sleep_calls = []
+
+        with patch("tap.tap_with_retry"), \
+             patch("tap.check_keypress", return_value=""), \
+             patch("tap.get_or_create_session", return_value="sess"), \
+             patch("requests.get") as mock_get, \
+             patch("requests.post"), \
+             patch("termios.tcgetattr", return_value=[]), \
+             patch("termios.tcsetattr"), \
+             patch("tty.setcbreak"), \
+             patch("time.sleep", side_effect=lambda s: sleep_calls.append(s)), \
+             patch("sys.argv", ["tap.py", "--coords", "700,400", "--count", "3", "--interval", "0.25"]):
+            mock_get.return_value.json.return_value = {"value": {"ready": True}}
+            tap.main()
+
+        assert sleep_calls == [0.25, 0.25]
+
+
 # ── check_keypress ────────────────────────────────────────────────────────────
 
 class TestCheckKeypress:
