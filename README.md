@@ -4,6 +4,20 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
 
 ---
 
+## Prerequisites
+
+- **macOS** with Xcode installed (and command-line tools: `xcode-select --install`)
+- **Python 3** with `requests` and `Pillow`: `pip3 install requests Pillow`
+- **Node.js / npm** for Appium and the WDA source:
+  ```bash
+  npm install -g appium
+  appium driver install xcuitest
+  ```
+- **iproxy** — ships with Xcode's `libimobiledevice` toolchain; verify with `which iproxy`
+- iPhone **trusted** on this Mac (connect via USB → tap *Trust* on the phone)
+
+---
+
 ## Setup
 
 1. Copy `.env.example` to `.env` in the project root and fill in your values:
@@ -17,6 +31,8 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
    | `TEAM` | Xcode → Signing & Capabilities → Team ID |
 
 2. Build and install WDA onto your device (one-time, see [7-day certificate renewal](#7-day-certificate-renewal) for the commands).
+
+3. After installing, go to **Settings → VPN & Device Management** on the iPhone, find your developer certificate, and tap **Trust**. This is required the first time only.
 
 ---
 
@@ -120,6 +136,17 @@ xcrun devicectl device install app --device "$UDID" "$WDA_APP"
 ```
 
 No need to re-trust on the phone after renewal.
+
+---
+
+## Running tests
+
+No device needed — all network and subprocess calls are mocked.
+
+```bash
+pip3 install pytest
+pytest
+```
 
 ---
 
