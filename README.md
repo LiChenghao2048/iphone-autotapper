@@ -87,7 +87,7 @@ Known working coordinates:
 
 ## 7-day certificate renewal
 
-Free accounts expire every 7 days. When `start_wda.sh` fails, rebuild WDA:
+Free accounts expire every 7 days. When `scripts/start_wda.sh` fails, rebuild WDA:
 
 ```bash
 source .env
@@ -117,7 +117,7 @@ No need to re-trust on the phone after renewal.
 ## Stack
 
 ```
-tap.py ──HTTP──▶ WDA (port 8100)
+src/tap.py ──HTTP──▶ WDA (port 8100)
                      │
                  iproxy (USB)
                      │
