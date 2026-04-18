@@ -42,7 +42,11 @@ def load_env(env_path: pathlib.Path) -> dict:
         if not line or line.startswith("#"):
             continue
         key, _, value = line.partition("=")
-        env[key.strip()] = value.strip().strip('"').strip("'")
+        value = value.strip().strip('"').strip("'")
+        # strip inline comments (e.g. UDID=abc # note) to match shell `source` behaviour
+        if " #" in value:
+            value = value[:value.index(" #")].rstrip()
+        env[key.strip()] = value
     for key in ("UDID", "TEAM"):
         if not env.get(key):
             raise ValueError(f"Missing required variable {key!r} in {env_path}")
@@ -144,6 +148,9 @@ def main() -> None:
     )
 
     def _cleanup(signum=None, frame=None) -> None:
+        # Reset handlers first so a second signal can't re-enter
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
         print("\nShutting down...")
         wda.terminate()
         iproxy.terminate()

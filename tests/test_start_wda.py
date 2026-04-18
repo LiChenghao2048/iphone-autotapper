@@ -49,6 +49,13 @@ class TestLoadEnv:
         assert result["UDID"] == "bare-id"
         assert result["TEAM"] == "bare-team"
 
+    def test_strips_inline_comments(self, tmp_path):
+        env_file = tmp_path / ".env"
+        env_file.write_text('UDID=abc123 # my device\nTEAM=XYZ # work team\n')
+        result = start_wda.load_env(env_file)
+        assert result["UDID"] == "abc123"
+        assert result["TEAM"] == "XYZ"
+
     def test_ignores_blank_lines_and_comments(self, tmp_path):
         env_file = tmp_path / ".env"
         env_file.write_text(
@@ -144,17 +151,20 @@ class TestWaitForWda:
             assert start_wda.wait_for_wda(timeout=10, interval=0.1) is True
 
     def test_returns_false_on_timeout(self):
+        # monotonic sequence: deadline call → enter loop twice → exit loop
+        # deadline = 0 + 5 = 5; 1 < 5 → run; 2 < 5 → run; 99 > 5 → exit
         with patch("requests.get", side_effect=ConnectionRefusedError), \
              patch("time.sleep"), \
-             patch("time.monotonic", side_effect=[0] + [99] * 20):
+             patch("time.monotonic", side_effect=[0, 1, 2, 99]):
             assert start_wda.wait_for_wda(timeout=5, interval=0.1) is False
 
     def test_returns_false_when_status_code_is_not_200(self):
         resp = MagicMock()
         resp.status_code = 500
+        # deadline = 0 + 5 = 5; 1 < 5 → run; 99 > 5 → exit
         with patch("requests.get", return_value=resp), \
              patch("time.sleep"), \
-             patch("time.monotonic", side_effect=[0] + [99] * 20):
+             patch("time.monotonic", side_effect=[0, 1, 99]):
             assert start_wda.wait_for_wda(timeout=5, interval=0.1) is False
 
     def test_polls_correct_url(self):

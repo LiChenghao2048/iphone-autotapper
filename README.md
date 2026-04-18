@@ -6,7 +6,7 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and fill in your values:
+1. Copy `.env.example` to `.env` in the project root and fill in your values:
    ```bash
    cp .env.example .env
    ```
