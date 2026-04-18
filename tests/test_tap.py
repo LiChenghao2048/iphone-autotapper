@@ -208,6 +208,12 @@ class TestParseCoords:
         with pytest.raises(ValueError, match="Invalid coord"):
             tap.parse_coords(self._args(["700.5,400"]))
 
+    def test_main_exits_with_error_on_bad_coords(self):
+        with patch("sys.argv", ["tap.py", "--coords", "abc,def"]):
+            with pytest.raises(SystemExit) as exc_info:
+                tap.main()
+        assert exc_info.value.code != 0
+
 
 # ── per-cycle interval ────────────────────────────────────────────────────────
 
