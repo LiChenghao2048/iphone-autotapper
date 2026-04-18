@@ -61,6 +61,12 @@ class TestGetSession:
         with patch("requests.post", return_value=resp):
             assert pick_coords.get_session() == "xyz"
 
+    def test_top_level_none_falls_back_to_value_dict(self):
+        resp = MagicMock()
+        resp.json.return_value = {"sessionId": None, "value": {"sessionId": "fallback"}}
+        with patch("requests.post", return_value=resp):
+            assert pick_coords.get_session() == "fallback"
+
     def test_raises_when_session_id_absent(self):
         resp = MagicMock()
         resp.json.return_value = {"value": {}}
@@ -196,6 +202,14 @@ class TestHandler:
         _, _, body = _http_get(port, "/")
         assert b"iPhone Coordinate Picker" in body
 
+    def test_unknown_path_falls_through_to_html(self, handler_server):
+        port, _, _ = handler_server
+        # Any path that is not /click* or /refresh serves the picker HTML
+        status, ctype, body = _http_get(port, "/favicon.ico")
+        assert status == 200
+        assert "text/html" in ctype
+        assert b"iPhone Coordinate Picker" in body
+
     # ── /click route ──────────────────────────────────────────────────────────
 
     def test_click_returns_200(self, handler_server):
@@ -207,7 +221,8 @@ class TestHandler:
         port, _, _ = handler_server
         status, _, _ = _http_get(port, "/click")
         assert status == 200
-        # Handler prints "?" for any param not present in the query string
+        # The handler prints the tap.py command before sending the response, so
+        # the print completes before _http_get returns — capsys captures it reliably.
         assert "?" in capsys.readouterr().out
 
     # ── /refresh route ────────────────────────────────────────────────────────

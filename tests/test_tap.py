@@ -121,7 +121,7 @@ class TestTapWithRetry:
         assert call_n["n"] == 2
 
     def test_retries_when_session_reclaim_itself_fails(self):
-        tap._session_id = "old"
+        # setup_method sets _session_id = "initial_session"; use it as the stale value
         used_sessions = []
         tap_n = {"n": 0}
 
@@ -148,8 +148,8 @@ class TestTapWithRetry:
         assert sess_n["n"] == 2
         assert tap._session_id == "recovered"
         # First two taps use the stale session (first reclaim failed)
-        assert used_sessions[0] == "old"
-        assert used_sessions[1] == "old"
+        assert used_sessions[0] == "initial_session"
+        assert used_sessions[1] == "initial_session"
         # Third tap uses the successfully recovered session
         assert used_sessions[2] == "recovered"
 
