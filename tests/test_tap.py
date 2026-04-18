@@ -121,9 +121,12 @@ class TestTapWithRetry:
         assert call_n["n"] == 2
 
     def test_retries_when_session_reclaim_itself_fails(self):
+        tap._session_id = "old"
+        used_sessions = []
         tap_n = {"n": 0}
 
         def tap_effect(session_id, x, y):
+            used_sessions.append(session_id)
             tap_n["n"] += 1
             if tap_n["n"] < 3:
                 raise RuntimeError("tap fail")
@@ -144,6 +147,11 @@ class TestTapWithRetry:
         assert tap_n["n"] == 3
         assert sess_n["n"] == 2
         assert tap._session_id == "recovered"
+        # First two taps use the stale session (first reclaim failed)
+        assert used_sessions[0] == "old"
+        assert used_sessions[1] == "old"
+        # Third tap uses the successfully recovered session
+        assert used_sessions[2] == "recovered"
 
     def test_prints_stderr_warning_after_10_consecutive_failures(self, capsys):
         call_n = {"n": 0}

@@ -88,6 +88,19 @@ class TestTakeScreenshot:
             "http://127.0.0.1:8100/session/sess1/screenshot", timeout=10
         )
 
+    def test_raises_key_error_on_malformed_wda_response(self):
+        resp = MagicMock()
+        resp.json.return_value = {}  # missing "value" key
+        with patch("pick_coords.get_session", return_value="sess1"), \
+             patch("requests.get", return_value=resp):
+            with pytest.raises(KeyError):
+                pick_coords.take_screenshot()
+
+    def test_propagates_get_session_error(self):
+        with patch("pick_coords.get_session", side_effect=RuntimeError("no session")):
+            with pytest.raises(RuntimeError, match="no session"):
+                pick_coords.take_screenshot()
+
 
 # ── screenshot_to_b64 ─────────────────────────────────────────────────────────
 
@@ -190,10 +203,12 @@ class TestHandler:
         status, _, _ = _http_get(port, "/click?tx=100&ty=200&px=300&py=600")
         assert status == 200
 
-    def test_click_with_missing_params_returns_200_using_defaults(self, handler_server):
+    def test_click_with_missing_params_uses_question_mark_defaults(self, handler_server, capsys):
         port, _, _ = handler_server
         status, _, _ = _http_get(port, "/click")
         assert status == 200
+        # Handler prints "?" for any param not present in the query string
+        assert "?" in capsys.readouterr().out
 
     # ── /refresh route ────────────────────────────────────────────────────────
 
@@ -213,13 +228,19 @@ class TestHandler:
         assert data["px_h"] == 18
 
     def test_refresh_updates_shared_state(self, handler_server):
-        port, _, state = handler_server
+        port, img_path, state = handler_server
+        original_b64 = state["b64"]
+
+        # Overwrite the backing file with a PNG of different dimensions
+        new_png = _make_png(30, 60)
+        img_path.write_bytes(new_png)
+
         _http_get(port, "/refresh")
-        # The state dict is mutated in-place; dimensions stay the same here
-        # since we re-read the same file, but b64 should still be a valid string
-        assert isinstance(state["b64"], str)
-        assert state["px_w"] == 9
-        assert state["px_h"] == 18
+
+        # State dict must now reflect the new image
+        assert state["b64"] != original_b64
+        assert state["px_w"] == 30
+        assert state["px_h"] == 60
 
     def test_refresh_returns_500_when_img_file_missing(self, tmp_path):
         """Handler responds 500 when the backing image file has been deleted."""
