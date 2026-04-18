@@ -192,8 +192,9 @@ class TestParseCoords:
     def test_falls_back_to_x_y_when_coords_none(self):
         assert tap.parse_coords(self._args(coords=None, x=100, y=200)) == [(100, 200)]
 
-    def test_falls_back_to_x_y_when_coords_empty(self):
-        assert tap.parse_coords(self._args(coords=[], x=50, y=75)) == [(50, 75)]
+    def test_coords_takes_precedence_over_x_y(self):
+        # --coords should win even when --x/--y are also set
+        assert tap.parse_coords(self._args(coords=["700,400"], x=999, y=999)) == [(700, 400)]
 
     def test_raises_on_missing_y(self):
         with pytest.raises(ValueError, match="Invalid coord"):
@@ -202,6 +203,10 @@ class TestParseCoords:
     def test_raises_on_extra_value(self):
         with pytest.raises(ValueError, match="Invalid coord"):
             tap.parse_coords(self._args(["700,400,999"]))
+
+    def test_raises_on_non_integer_value(self):
+        with pytest.raises(ValueError, match="Invalid coord"):
+            tap.parse_coords(self._args(["700.5,400"]))
 
 
 # ── per-cycle interval ────────────────────────────────────────────────────────

@@ -104,7 +104,10 @@ def parse_coords(args) -> list:
             parts = pair.split(",")
             if len(parts) != 2:
                 raise ValueError(f"Invalid coord '{pair}': expected 'X,Y'")
-            result.append((int(parts[0]), int(parts[1])))
+            try:
+                result.append((int(parts[0]), int(parts[1])))
+            except ValueError:
+                raise ValueError(f"Invalid coord '{pair}': expected integer values")
         return result
     return [(args.x, args.y)]
 
