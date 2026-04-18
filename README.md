@@ -31,9 +31,17 @@ Wait for: `WDA is live at http://127.0.0.1:8100`
 
 **Terminal 2 — tap:**
 ```bash
-python3 src/tap.py --x 701 --y 402            # tap forever at 1s interval
-python3 src/tap.py --x 701 --y 402 --interval 0.5   # faster
-python3 src/tap.py --x 701 --y 402 --count 60       # exactly 60 taps
+# Single coordinate — tap forever at 1s interval
+python3 src/tap.py --coords "701,402"
+
+# Multiple coordinates — tapped in sequence each cycle
+python3 src/tap.py --coords "700,400" "335,250" "860,400"
+
+# Faster cycle rate
+python3 src/tap.py --coords "700,400" "335,250" --interval 0.5
+
+# Run exactly 60 cycles then stop
+python3 src/tap.py --coords "700,400" "335,250" --count 60
 ```
 
 `Ctrl+C` to stop.
@@ -55,10 +63,11 @@ While `tap.py` is running in the terminal:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--x` | 215 | Horizontal coordinate (logical points) |
-| `--y` | 466 | Vertical coordinate (logical points) |
-| `--interval` | 1.0 | Seconds between taps |
-| `--count` | 0 | Taps to perform — 0 = run forever |
+| `--coords` | — | One or more `"X,Y"` pairs to tap in sequence each cycle |
+| `--x` | 215 | Horizontal coordinate — single-coord fallback when `--coords` is omitted |
+| `--y` | 466 | Vertical coordinate — single-coord fallback when `--coords` is omitted |
+| `--interval` | 1.0 | Seconds between cycles (sleep fires once after all coords are tapped) |
+| `--count` | 0 | Cycles to perform — 0 = run forever |
 
 ---
 
