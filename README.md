@@ -13,7 +13,7 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
   npm install -g appium
   appium driver install xcuitest
   ```
-- **iproxy** — ships with Xcode's `libimobiledevice` toolchain; verify with `which iproxy`
+- **iproxy** — install via `brew install libimobiledevice`
 - iPhone **trusted** on this Mac (connect via USB → tap *Trust* on the phone)
 
 ---
@@ -32,7 +32,7 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
 
 2. Build and install WDA onto your device (one-time, see [7-day certificate renewal](#7-day-certificate-renewal) for the commands).
 
-3. After installing, go to **Settings → VPN & Device Management** on the iPhone, find your developer certificate, and tap **Trust**. This is required the first time only.
+3. After the WDA runner app is installed on your device, go to **Settings → VPN & Device Management** on the iPhone, find your developer certificate, and tap **Trust**. This is required the first time only.
 
 ---
 
@@ -144,7 +144,7 @@ No need to re-trust on the phone after renewal.
 No device needed — all network and subprocess calls are mocked.
 
 ```bash
-pip3 install pytest
+pip3 install pytest requests Pillow
 pytest
 ```
 
