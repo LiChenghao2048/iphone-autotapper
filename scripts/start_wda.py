@@ -94,12 +94,18 @@ def build_xctestrun(team: str, path: pathlib.Path) -> None:
 
 def unlock_keychain() -> None:
     """Unlock the login keychain so xcodebuild can access signing credentials
-    without prompting during unattended sessions.
+    without prompting mid-session.
 
     xcodebuild accesses the keychain to read signing certificates. If the
     keychain auto-locks (e.g. after system sleep), macOS writes a password
     prompt directly to /dev/tty, bypassing stdout/stderr redirects and hanging
     the process. Unlocking up front prevents this.
+
+    Note: if the keychain is currently locked, `security unlock-keychain` will
+    prompt for a password on /dev/tty. This is intentional — the user is
+    present at session start and enters the password once. If you need fully
+    automated launch (no user present at start), unlock the keychain manually
+    before invoking this script, or disable auto-lock in Keychain Access.
     """
     keychain = os.path.expanduser("~/Library/Keychains/login.keychain-db")
     print("Unlocking login keychain (prevents password prompts during session)...")
@@ -119,9 +125,12 @@ def _drain_to_log(pipe, log_path: str, cap_bytes: int = LOG_CAP_BYTES) -> None:
 
     Runs in a daemon thread. Captures enough output to debug startup failures
     without letting the log grow unbounded over a long session.
+
+    Opens with line buffering (buffering=1) so each line is flushed to disk
+    immediately — safe to read even if the process is killed.
     """
     written = 0
-    with open(log_path, "w") as f:
+    with open(log_path, "w", buffering=1) as f:
         for line in pipe:
             if written < cap_bytes:
                 f.write(line)
@@ -204,6 +213,8 @@ def main() -> None:
         print("\nShutting down...")
         wda.terminate()
         iproxy.terminate()
+        # Give the log thread up to 2s to flush its buffered write before exit
+        log_thread.join(timeout=2)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _cleanup)
