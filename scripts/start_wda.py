@@ -11,9 +11,11 @@ Reads UDID and TEAM from .env in the project root.
 
 import os
 import pathlib
+import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 import requests
@@ -22,6 +24,8 @@ WDA_URL = "http://127.0.0.1:8100"
 XCTESTRUN_PATH = pathlib.Path("/tmp/WebDriverAgentRunner.xctestrun")
 POLL_INTERVAL = 2   # seconds between WDA readiness checks
 POLL_TIMEOUT  = 80  # seconds before giving up
+LOG_PATH      = "/tmp/wda.log"
+LOG_CAP_BYTES = 2_097_152  # 2 MB — enough to capture startup; discards the rest
 
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -87,6 +91,54 @@ def build_xctestrun(team: str, path: pathlib.Path) -> None:
 """)
 
 
+# ── Keychain ───────────────────────────────────────────────────────────────────
+
+# ── DerivedData cleanup ────────────────────────────────────────────────────────
+
+def cleanup_derived_data(derived_data: pathlib.Path = None) -> None:
+    """Delete stale xcodebuild temporary-* folders left by previous WDA sessions.
+
+    Each `xcodebuild test-without-building` run creates a temporary-* folder in
+    Xcode's DerivedData directory. Inside is an xcresult bundle whose
+    Session-WebDriverAgentRunner-*.log grows for the entire session — a few
+    hours of tapping produces gigabytes. These folders are never cleaned up
+    automatically, so we purge them at startup before creating a new one.
+
+    Args:
+        derived_data: override the DerivedData path (used in tests).
+    """
+    if derived_data is None:
+        derived_data = pathlib.Path.home() / "Library/Developer/Xcode/DerivedData"
+    removed = []
+    for folder in derived_data.glob("temporary-*"):
+        try:
+            shutil.rmtree(folder)
+            removed.append(folder.name)
+        except Exception as e:
+            print(f"[warn] Could not remove {folder.name}: {e}", file=sys.stderr)
+    if removed:
+        print(f"Cleaned up {len(removed)} stale DerivedData folder(s).")
+
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+
+def _drain_to_log(pipe, log_path: str, cap_bytes: int = LOG_CAP_BYTES) -> None:
+    """Read from pipe; write the first cap_bytes to log_path, then discard.
+
+    Runs in a daemon thread. Captures enough output to debug startup failures
+    without letting the log grow unbounded over a long session.
+
+    Opens with line buffering (buffering=1) so each line is flushed to disk
+    immediately — safe to read even if the process is killed.
+    """
+    written = 0
+    with open(log_path, "w", buffering=1) as f:
+        for line in pipe:
+            if written < cap_bytes:
+                f.write(line)
+                written += len(line)
+
+
 # ── WDA readiness ──────────────────────────────────────────────────────────────
 
 def wait_for_wda(
@@ -129,6 +181,8 @@ def main() -> None:
     subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "iproxy 8100"], capture_output=True)
     time.sleep(1)
 
+    cleanup_derived_data()
+
     print("Starting iproxy port forward (8100)...")
     iproxy = subprocess.Popen(
         ["iproxy", "8100", "8100"],
@@ -137,16 +191,22 @@ def main() -> None:
     )
     time.sleep(1)
 
-    wda_log = open("/tmp/wda.log", "w")
     wda = subprocess.Popen(
         [
             "xcodebuild", "test-without-building",
             "-xctestrun", str(XCTESTRUN_PATH),
             "-destination", f"id={udid}",
         ],
-        stdout=wda_log,
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        text=True,
     )
+    log_thread = threading.Thread(
+        target=_drain_to_log,
+        args=(wda.stdout, LOG_PATH),
+        daemon=True,
+    )
+    log_thread.start()
 
     def _cleanup(signum=None, frame=None) -> None:
         # Reset handlers first so a second signal can't re-enter
@@ -155,14 +215,15 @@ def main() -> None:
         print("\nShutting down...")
         wda.terminate()
         iproxy.terminate()
-        wda_log.close()
+        # Give the log thread up to 2s to flush its buffered write before exit
+        log_thread.join(timeout=2)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _cleanup)
     signal.signal(signal.SIGTERM, _cleanup)
 
     if not wait_for_wda():
-        print("ERROR: WDA did not come up. Check /tmp/wda.log", file=sys.stderr)
+        print(f"ERROR: WDA did not come up. Check {LOG_PATH}", file=sys.stderr)
         _cleanup()
 
     print(f"WDA is live at {WDA_URL}")

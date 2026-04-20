@@ -177,33 +177,115 @@ class TestWaitForWda:
         mock_get.assert_called_with("http://127.0.0.1:8100/status", timeout=1)
 
 
+# ── cleanup_derived_data ───────────────────────────────────────────────────────
+
+class TestCleanupDerivedData:
+
+    def test_removes_temporary_folders(self, tmp_path):
+        (tmp_path / "temporary-abc123").mkdir()
+        (tmp_path / "temporary-def456").mkdir()
+        (tmp_path / "WebDriverAgent-xyz").mkdir()  # should be left alone
+
+        start_wda.cleanup_derived_data(derived_data=tmp_path)
+
+        assert not (tmp_path / "temporary-abc123").exists()
+        assert not (tmp_path / "temporary-def456").exists()
+        assert (tmp_path / "WebDriverAgent-xyz").exists()
+
+    def test_does_nothing_when_no_temporary_folders(self, tmp_path):
+        (tmp_path / "WebDriverAgent-xyz").mkdir()
+
+        start_wda.cleanup_derived_data(derived_data=tmp_path)  # should not raise
+
+        assert (tmp_path / "WebDriverAgent-xyz").exists()
+
+    def test_prints_count_of_removed_folders(self, tmp_path, capsys):
+        (tmp_path / "temporary-aaa").mkdir()
+        (tmp_path / "temporary-bbb").mkdir()
+
+        start_wda.cleanup_derived_data(derived_data=tmp_path)
+
+        assert "2" in capsys.readouterr().out
+
+    def test_warns_on_removal_failure(self, tmp_path, capsys):
+        (tmp_path / "temporary-aaa").mkdir()
+
+        with patch("start_wda.shutil.rmtree", side_effect=PermissionError("denied")):
+            start_wda.cleanup_derived_data(derived_data=tmp_path)
+
+        assert "warn" in capsys.readouterr().err
+
+
+# ── unlock_keychain ────────────────────────────────────────────────────────────
+
+# ── _drain_to_log ──────────────────────────────────────────────────────────────
+
+class TestDrainToLog:
+
+    def test_writes_pipe_output_to_file(self, tmp_path):
+        log = tmp_path / "wda.log"
+        start_wda._drain_to_log(iter(["line1\n", "line2\n"]), str(log))
+        assert log.read_text() == "line1\nline2\n"
+
+    def test_caps_output_at_limit(self, tmp_path):
+        log = tmp_path / "wda.log"
+        lines = ["x" * 100 + "\n"] * 100  # 10100 bytes total
+        start_wda._drain_to_log(iter(lines), str(log), cap_bytes=200)
+        assert len(log.read_text()) <= 200 + 101  # at most one line over the cap
+
+    def test_empty_pipe_creates_empty_file(self, tmp_path):
+        log = tmp_path / "wda.log"
+        start_wda._drain_to_log(iter([]), str(log))
+        assert log.read_text() == ""
+
+
 # ── main / pkill ───────────────────────────────────────────────────────────────
 
 class TestMainPkill:
 
-    def test_pkill_uses_current_user_flag(self, tmp_path):
-        """pkill must include -u <uid> so it never prompts for a password."""
-        calls = []
+    def _run_main(self, tmp_path):
+        """Helper: run main() with all subprocess calls mocked.
+
+        LOG_PATH is redirected to tmp_path so _drain_to_log can write to a
+        real file without touching /tmp — no builtins.open mock needed, which
+        also eliminates the race between the context-manager exit and the
+        daemon thread's open() call.
+
+        Returns all_calls: a single list of ("run"|"popen", cmd) tuples in
+        chronological order, shared across both fake_run and fake_popen.
+        """
+        all_calls = []
 
         def fake_run(cmd, **kwargs):
-            calls.append(cmd)
+            all_calls.append(("run", cmd))
             return MagicMock(returncode=0)
 
         fake_proc = MagicMock()
         fake_proc.wait.return_value = 0
+        fake_proc.stdout = iter([])
+
+        def fake_popen(cmd, **kwargs):
+            all_calls.append(("popen", cmd))
+            return fake_proc
 
         with patch("start_wda.load_env", return_value={"UDID": "test-udid", "TEAM": "TESTTEAM"}), \
              patch("start_wda.build_xctestrun"), \
              patch("subprocess.run", side_effect=fake_run), \
-             patch("subprocess.Popen", return_value=fake_proc), \
-             patch("builtins.open", MagicMock()), \
+             patch("subprocess.Popen", side_effect=fake_popen), \
+             patch("start_wda.LOG_PATH", str(tmp_path / "wda.log")), \
              patch("time.sleep"), \
              patch("start_wda.wait_for_wda", return_value=True), \
              patch("sys.exit"):
             start_wda.main()
 
-        pkill_calls = [c for c in calls if c and c[0] == "pkill"]
+        return all_calls
+
+    def test_pkill_uses_current_user_flag(self, tmp_path):
+        """pkill must include -u <uid> so it never prompts for a password."""
+        all_calls = self._run_main(tmp_path)
+        pkill_calls = [cmd for kind, cmd in all_calls if kind == "run" and cmd and cmd[0] == "pkill"]
         assert pkill_calls, "pkill was never called"
         pkill_cmd = pkill_calls[0]
         assert "-u" in pkill_cmd, "pkill missing -u flag (could prompt for password)"
         assert str(os.getuid()) in pkill_cmd, "pkill -u should use current user's UID"
+
