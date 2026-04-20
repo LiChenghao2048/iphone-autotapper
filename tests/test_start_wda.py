@@ -177,12 +177,51 @@ class TestWaitForWda:
         mock_get.assert_called_with("http://127.0.0.1:8100/status", timeout=1)
 
 
+# ── unlock_keychain ────────────────────────────────────────────────────────────
+
+class TestUnlockKeychain:
+
+    def test_calls_security_unlock_keychain(self):
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            start_wda.unlock_keychain()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "security"
+        assert cmd[1] == "unlock-keychain"
+        assert "login.keychain-db" in cmd[2]
+
+    def test_prints_warning_on_failure(self, capsys):
+        with patch("subprocess.run", return_value=MagicMock(returncode=1)):
+            start_wda.unlock_keychain()
+        assert "warn" in capsys.readouterr().err
+
+
+# ── _drain_to_log ──────────────────────────────────────────────────────────────
+
+class TestDrainToLog:
+
+    def test_writes_pipe_output_to_file(self, tmp_path):
+        log = tmp_path / "wda.log"
+        start_wda._drain_to_log(iter(["line1\n", "line2\n"]), str(log))
+        assert log.read_text() == "line1\nline2\n"
+
+    def test_caps_output_at_limit(self, tmp_path):
+        log = tmp_path / "wda.log"
+        lines = ["x" * 100 + "\n"] * 100  # 10100 bytes total
+        start_wda._drain_to_log(iter(lines), str(log), cap_bytes=200)
+        assert len(log.read_text()) <= 200 + 101  # at most one line over the cap
+
+    def test_empty_pipe_creates_empty_file(self, tmp_path):
+        log = tmp_path / "wda.log"
+        start_wda._drain_to_log(iter([]), str(log))
+        assert log.read_text() == ""
+
+
 # ── main / pkill ───────────────────────────────────────────────────────────────
 
 class TestMainPkill:
 
-    def test_pkill_uses_current_user_flag(self, tmp_path):
-        """pkill must include -u <uid> so it never prompts for a password."""
+    def _run_main(self):
+        """Helper: run main() with all subprocess and I/O mocked."""
         calls = []
 
         def fake_run(cmd, **kwargs):
@@ -191,6 +230,7 @@ class TestMainPkill:
 
         fake_proc = MagicMock()
         fake_proc.wait.return_value = 0
+        fake_proc.stdout = iter([])
 
         with patch("start_wda.load_env", return_value={"UDID": "test-udid", "TEAM": "TESTTEAM"}), \
              patch("start_wda.build_xctestrun"), \
@@ -202,8 +242,20 @@ class TestMainPkill:
              patch("sys.exit"):
             start_wda.main()
 
+        return calls
+
+    def test_pkill_uses_current_user_flag(self):
+        """pkill must include -u <uid> so it never prompts for a password."""
+        calls = self._run_main()
         pkill_calls = [c for c in calls if c and c[0] == "pkill"]
         assert pkill_calls, "pkill was never called"
         pkill_cmd = pkill_calls[0]
         assert "-u" in pkill_cmd, "pkill missing -u flag (could prompt for password)"
         assert str(os.getuid()) in pkill_cmd, "pkill -u should use current user's UID"
+
+    def test_keychain_unlocked_before_xcodebuild(self):
+        """security unlock-keychain must be called before the wda Popen."""
+        calls = self._run_main()
+        security_calls = [c for c in calls if c and c[0] == "security"]
+        assert security_calls, "security unlock-keychain was never called"
+        assert security_calls[0][1] == "unlock-keychain"

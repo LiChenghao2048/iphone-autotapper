@@ -14,6 +14,7 @@ import pathlib
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 import requests
@@ -22,6 +23,8 @@ WDA_URL = "http://127.0.0.1:8100"
 XCTESTRUN_PATH = pathlib.Path("/tmp/WebDriverAgentRunner.xctestrun")
 POLL_INTERVAL = 2   # seconds between WDA readiness checks
 POLL_TIMEOUT  = 80  # seconds before giving up
+LOG_PATH      = "/tmp/wda.log"
+LOG_CAP_BYTES = 2_097_152  # 2 MB — enough to capture startup; discards the rest
 
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -87,6 +90,44 @@ def build_xctestrun(team: str, path: pathlib.Path) -> None:
 """)
 
 
+# ── Keychain ───────────────────────────────────────────────────────────────────
+
+def unlock_keychain() -> None:
+    """Unlock the login keychain so xcodebuild can access signing credentials
+    without prompting during unattended sessions.
+
+    xcodebuild accesses the keychain to read signing certificates. If the
+    keychain auto-locks (e.g. after system sleep), macOS writes a password
+    prompt directly to /dev/tty, bypassing stdout/stderr redirects and hanging
+    the process. Unlocking up front prevents this.
+    """
+    keychain = os.path.expanduser("~/Library/Keychains/login.keychain-db")
+    print("Unlocking login keychain (prevents password prompts during session)...")
+    result = subprocess.run(["security", "unlock-keychain", keychain])
+    if result.returncode != 0:
+        print(
+            "[warn] Could not unlock keychain — xcodebuild may prompt for a "
+            "password if the keychain re-locks during a long session.",
+            file=sys.stderr,
+        )
+
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+
+def _drain_to_log(pipe, log_path: str, cap_bytes: int = LOG_CAP_BYTES) -> None:
+    """Read from pipe; write the first cap_bytes to log_path, then discard.
+
+    Runs in a daemon thread. Captures enough output to debug startup failures
+    without letting the log grow unbounded over a long session.
+    """
+    written = 0
+    with open(log_path, "w") as f:
+        for line in pipe:
+            if written < cap_bytes:
+                f.write(line)
+                written += len(line)
+
+
 # ── WDA readiness ──────────────────────────────────────────────────────────────
 
 def wait_for_wda(
@@ -129,6 +170,8 @@ def main() -> None:
     subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "iproxy 8100"], capture_output=True)
     time.sleep(1)
 
+    unlock_keychain()
+
     print("Starting iproxy port forward (8100)...")
     iproxy = subprocess.Popen(
         ["iproxy", "8100", "8100"],
@@ -137,16 +180,22 @@ def main() -> None:
     )
     time.sleep(1)
 
-    wda_log = open("/tmp/wda.log", "w")
     wda = subprocess.Popen(
         [
             "xcodebuild", "test-without-building",
             "-xctestrun", str(XCTESTRUN_PATH),
             "-destination", f"id={udid}",
         ],
-        stdout=wda_log,
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        text=True,
     )
+    log_thread = threading.Thread(
+        target=_drain_to_log,
+        args=(wda.stdout, LOG_PATH),
+        daemon=True,
+    )
+    log_thread.start()
 
     def _cleanup(signum=None, frame=None) -> None:
         # Reset handlers first so a second signal can't re-enter
@@ -155,14 +204,13 @@ def main() -> None:
         print("\nShutting down...")
         wda.terminate()
         iproxy.terminate()
-        wda_log.close()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _cleanup)
     signal.signal(signal.SIGTERM, _cleanup)
 
     if not wait_for_wda():
-        print("ERROR: WDA did not come up. Check /tmp/wda.log", file=sys.stderr)
+        print(f"ERROR: WDA did not come up. Check {LOG_PATH}", file=sys.stderr)
         _cleanup()
 
     print(f"WDA is live at {WDA_URL}")
