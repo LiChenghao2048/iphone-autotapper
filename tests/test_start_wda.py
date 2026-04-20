@@ -177,6 +177,45 @@ class TestWaitForWda:
         mock_get.assert_called_with("http://127.0.0.1:8100/status", timeout=1)
 
 
+# ── cleanup_derived_data ───────────────────────────────────────────────────────
+
+class TestCleanupDerivedData:
+
+    def test_removes_temporary_folders(self, tmp_path):
+        (tmp_path / "temporary-abc123").mkdir()
+        (tmp_path / "temporary-def456").mkdir()
+        (tmp_path / "WebDriverAgent-xyz").mkdir()  # should be left alone
+
+        start_wda.cleanup_derived_data(derived_data=tmp_path)
+
+        assert not (tmp_path / "temporary-abc123").exists()
+        assert not (tmp_path / "temporary-def456").exists()
+        assert (tmp_path / "WebDriverAgent-xyz").exists()
+
+    def test_does_nothing_when_no_temporary_folders(self, tmp_path):
+        (tmp_path / "WebDriverAgent-xyz").mkdir()
+
+        start_wda.cleanup_derived_data(derived_data=tmp_path)  # should not raise
+
+        assert (tmp_path / "WebDriverAgent-xyz").exists()
+
+    def test_prints_count_of_removed_folders(self, tmp_path, capsys):
+        (tmp_path / "temporary-aaa").mkdir()
+        (tmp_path / "temporary-bbb").mkdir()
+
+        start_wda.cleanup_derived_data(derived_data=tmp_path)
+
+        assert "2" in capsys.readouterr().out
+
+    def test_warns_on_removal_failure(self, tmp_path, capsys):
+        (tmp_path / "temporary-aaa").mkdir()
+
+        with patch("start_wda.shutil.rmtree", side_effect=PermissionError("denied")):
+            start_wda.cleanup_derived_data(derived_data=tmp_path)
+
+        assert "warn" in capsys.readouterr().err
+
+
 # ── unlock_keychain ────────────────────────────────────────────────────────────
 
 class TestUnlockKeychain:

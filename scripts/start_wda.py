@@ -11,6 +11,7 @@ Reads UDID and TEAM from .env in the project root.
 
 import os
 import pathlib
+import shutil
 import signal
 import subprocess
 import sys
@@ -118,6 +119,33 @@ def unlock_keychain() -> None:
         )
 
 
+# ── DerivedData cleanup ────────────────────────────────────────────────────────
+
+def cleanup_derived_data(derived_data: pathlib.Path = None) -> None:
+    """Delete stale xcodebuild temporary-* folders left by previous WDA sessions.
+
+    Each `xcodebuild test-without-building` run creates a temporary-* folder in
+    Xcode's DerivedData directory. Inside is an xcresult bundle whose
+    Session-WebDriverAgentRunner-*.log grows for the entire session — a few
+    hours of tapping produces gigabytes. These folders are never cleaned up
+    automatically, so we purge them at startup before creating a new one.
+
+    Args:
+        derived_data: override the DerivedData path (used in tests).
+    """
+    if derived_data is None:
+        derived_data = pathlib.Path.home() / "Library/Developer/Xcode/DerivedData"
+    removed = []
+    for folder in derived_data.glob("temporary-*"):
+        try:
+            shutil.rmtree(folder)
+            removed.append(folder.name)
+        except Exception as e:
+            print(f"[warn] Could not remove {folder.name}: {e}", file=sys.stderr)
+    if removed:
+        print(f"Cleaned up {len(removed)} stale DerivedData folder(s).")
+
+
 # ── Logging ────────────────────────────────────────────────────────────────────
 
 def _drain_to_log(pipe, log_path: str, cap_bytes: int = LOG_CAP_BYTES) -> None:
@@ -180,6 +208,7 @@ def main() -> None:
     time.sleep(1)
 
     unlock_keychain()
+    cleanup_derived_data()
 
     print("Starting iproxy port forward (8100)...")
     iproxy = subprocess.Popen(
