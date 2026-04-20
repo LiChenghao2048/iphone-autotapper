@@ -93,32 +93,6 @@ def build_xctestrun(team: str, path: pathlib.Path) -> None:
 
 # ── Keychain ───────────────────────────────────────────────────────────────────
 
-def unlock_keychain() -> None:
-    """Unlock the login keychain so xcodebuild can access signing credentials
-    without prompting mid-session.
-
-    xcodebuild accesses the keychain to read signing certificates. If the
-    keychain auto-locks (e.g. after system sleep), macOS writes a password
-    prompt directly to /dev/tty, bypassing stdout/stderr redirects and hanging
-    the process. Unlocking up front prevents this.
-
-    Note: if the keychain is currently locked, `security unlock-keychain` will
-    prompt for a password on /dev/tty. This is intentional — the user is
-    present at session start and enters the password once. If you need fully
-    automated launch (no user present at start), unlock the keychain manually
-    before invoking this script, or disable auto-lock in Keychain Access.
-    """
-    keychain = os.path.expanduser("~/Library/Keychains/login.keychain-db")
-    print("Unlocking login keychain (prevents password prompts during session)...")
-    result = subprocess.run(["security", "unlock-keychain", keychain])
-    if result.returncode != 0:
-        print(
-            "[warn] Could not unlock keychain — xcodebuild may prompt for a "
-            "password if the keychain re-locks during a long session.",
-            file=sys.stderr,
-        )
-
-
 # ── DerivedData cleanup ────────────────────────────────────────────────────────
 
 def cleanup_derived_data(derived_data: pathlib.Path = None) -> None:
@@ -207,7 +181,6 @@ def main() -> None:
     subprocess.run(["pkill", "-u", str(os.getuid()), "-f", "iproxy 8100"], capture_output=True)
     time.sleep(1)
 
-    unlock_keychain()
     cleanup_derived_data()
 
     print("Starting iproxy port forward (8100)...")

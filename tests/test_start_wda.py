@@ -218,22 +218,6 @@ class TestCleanupDerivedData:
 
 # ── unlock_keychain ────────────────────────────────────────────────────────────
 
-class TestUnlockKeychain:
-
-    def test_calls_security_unlock_keychain(self):
-        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
-            start_wda.unlock_keychain()
-        cmd = mock_run.call_args[0][0]
-        assert cmd[0] == "security"
-        assert cmd[1] == "unlock-keychain"
-        assert "login.keychain-db" in cmd[2]
-
-    def test_prints_warning_on_failure(self, capsys):
-        with patch("subprocess.run", return_value=MagicMock(returncode=1)):
-            start_wda.unlock_keychain()
-        assert "warn" in capsys.readouterr().err
-
-
 # ── _drain_to_log ──────────────────────────────────────────────────────────────
 
 class TestDrainToLog:
@@ -305,16 +289,3 @@ class TestMainPkill:
         assert "-u" in pkill_cmd, "pkill missing -u flag (could prompt for password)"
         assert str(os.getuid()) in pkill_cmd, "pkill -u should use current user's UID"
 
-    def test_keychain_unlocked_before_xcodebuild(self, tmp_path):
-        """security unlock-keychain must appear before the xcodebuild Popen."""
-        all_calls = self._run_main(tmp_path)
-
-        cmds = [cmd[0] if cmd else None for _, cmd in all_calls]
-        security_idx = next((i for i, c in enumerate(cmds) if c == "security"), None)
-        xcodebuild_idx = next((i for i, c in enumerate(cmds) if c == "xcodebuild"), None)
-
-        assert security_idx is not None, "security unlock-keychain was never called"
-        assert xcodebuild_idx is not None, "xcodebuild Popen was never called"
-        assert security_idx < xcodebuild_idx, (
-            f"security (pos {security_idx}) must precede xcodebuild (pos {xcodebuild_idx})"
-        )
