@@ -220,17 +220,21 @@ class TestDrainToLog:
 
 class TestMainPkill:
 
-    def _run_main(self):
-        """Helper: run main() with all subprocess and I/O mocked.
+    def _run_main(self, tmp_path):
+        """Helper: run main() with all subprocess calls mocked.
 
-        Returns (run_calls, popen_calls) as ordered lists so tests can assert
-        on both presence and relative ordering.
+        LOG_PATH is redirected to tmp_path so _drain_to_log can write to a
+        real file without touching /tmp — no builtins.open mock needed, which
+        also eliminates the race between the context-manager exit and the
+        daemon thread's open() call.
+
+        Returns all_calls: a single list of ("run"|"popen", cmd) tuples in
+        chronological order, shared across both fake_run and fake_popen.
         """
-        run_calls = []
-        popen_calls = []
+        all_calls = []
 
         def fake_run(cmd, **kwargs):
-            run_calls.append(("run", cmd))
+            all_calls.append(("run", cmd))
             return MagicMock(returncode=0)
 
         fake_proc = MagicMock()
@@ -238,56 +242,40 @@ class TestMainPkill:
         fake_proc.stdout = iter([])
 
         def fake_popen(cmd, **kwargs):
-            popen_calls.append(("popen", cmd))
+            all_calls.append(("popen", cmd))
             return fake_proc
 
-        # builtins.open is mocked to prevent _drain_to_log from writing to
-        # disk during tests (the daemon thread calls open(LOG_PATH, "w", ...))
         with patch("start_wda.load_env", return_value={"UDID": "test-udid", "TEAM": "TESTTEAM"}), \
              patch("start_wda.build_xctestrun"), \
              patch("subprocess.run", side_effect=fake_run), \
              patch("subprocess.Popen", side_effect=fake_popen), \
-             patch("builtins.open", MagicMock()), \
+             patch("start_wda.LOG_PATH", str(tmp_path / "wda.log")), \
              patch("time.sleep"), \
              patch("start_wda.wait_for_wda", return_value=True), \
              patch("sys.exit"):
             start_wda.main()
 
-        # Merge into a single ordered event log for sequencing assertions
-        all_calls = sorted(run_calls + popen_calls, key=lambda _: 0)
-        # (insertion order is preserved in both lists; interleave by position)
-        # Return both lists separately for targeted assertions
-        return run_calls, popen_calls
+        return all_calls
 
-    def test_pkill_uses_current_user_flag(self):
+    def test_pkill_uses_current_user_flag(self, tmp_path):
         """pkill must include -u <uid> so it never prompts for a password."""
-        run_calls, _ = self._run_main()
-        pkill_calls = [cmd for _, cmd in run_calls if cmd and cmd[0] == "pkill"]
+        all_calls = self._run_main(tmp_path)
+        pkill_calls = [cmd for kind, cmd in all_calls if kind == "run" and cmd and cmd[0] == "pkill"]
         assert pkill_calls, "pkill was never called"
         pkill_cmd = pkill_calls[0]
         assert "-u" in pkill_cmd, "pkill missing -u flag (could prompt for password)"
         assert str(os.getuid()) in pkill_cmd, "pkill -u should use current user's UID"
 
-    def test_keychain_unlocked_before_xcodebuild(self):
-        """security unlock-keychain must be called before the xcodebuild Popen."""
-        run_calls, popen_calls = self._run_main()
+    def test_keychain_unlocked_before_xcodebuild(self, tmp_path):
+        """security unlock-keychain must appear before the xcodebuild Popen."""
+        all_calls = self._run_main(tmp_path)
 
-        # Find positions in their respective lists
-        security_pos = next(
-            (i for i, (_, cmd) in enumerate(run_calls) if cmd and cmd[0] == "security"),
-            None,
+        cmds = [cmd[0] if cmd else None for _, cmd in all_calls]
+        security_idx = next((i for i, c in enumerate(cmds) if c == "security"), None)
+        xcodebuild_idx = next((i for i, c in enumerate(cmds) if c == "xcodebuild"), None)
+
+        assert security_idx is not None, "security unlock-keychain was never called"
+        assert xcodebuild_idx is not None, "xcodebuild Popen was never called"
+        assert security_idx < xcodebuild_idx, (
+            f"security (pos {security_idx}) must precede xcodebuild (pos {xcodebuild_idx})"
         )
-        xcodebuild_pos = next(
-            (i for i, (_, cmd) in enumerate(popen_calls) if cmd and cmd[0] == "xcodebuild"),
-            None,
-        )
-
-        assert security_pos is not None, "security unlock-keychain was never called"
-        assert xcodebuild_pos is not None, "xcodebuild Popen was never called"
-
-        # Both lists are in chronological order within their call type.
-        # security is a subprocess.run call; xcodebuild is a Popen call.
-        # Since all subprocess.run calls finish before any Popen in main(),
-        # any security call appearing in run_calls guarantees it ran before xcodebuild.
-        assert run_calls[security_pos][1][1] == "unlock-keychain", \
-            "security call is not unlock-keychain"
