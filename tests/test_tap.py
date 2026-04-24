@@ -6,6 +6,7 @@ instance is required.
 """
 
 import sys
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -96,6 +97,7 @@ class TestTapWithRetry:
 
     def setup_method(self):
         tap._session_id = "initial_session"
+        tap._pause_event.clear()
 
     def test_succeeds_on_first_attempt(self):
         with patch("tap.tap") as mock_tap:
@@ -152,6 +154,31 @@ class TestTapWithRetry:
         assert used_sessions[1] == "initial_session"
         # Third tap uses the successfully recovered session
         assert used_sessions[2] == "recovered"
+
+    def test_exits_immediately_when_paused_before_tap(self):
+        tap._pause_event.set()
+        with patch("tap.tap") as mock_tap:
+            tap.tap_with_retry(0, 0)
+        mock_tap.assert_not_called()
+
+    def test_exits_retry_loop_when_paused_between_retries(self):
+        tap_calls = {"n": 0}
+
+        def tap_effect(session_id, x, y):
+            tap_calls["n"] += 1
+            raise RuntimeError("session stolen")
+
+        def reclaim_effect():
+            tap._pause_event.set()   # pause fires during session reclaim
+            return "new_session"
+
+        with patch("tap.tap", side_effect=tap_effect), \
+             patch("tap.get_or_create_session", side_effect=reclaim_effect), \
+             patch("time.sleep"):
+            tap.tap_with_retry(0, 0)
+
+        # only the first tap attempt was made; loop exited after pause set in reclaim
+        assert tap_calls["n"] == 1
 
     def test_prints_stderr_warning_after_10_consecutive_failures(self, capsys):
         call_n = {"n": 0}
@@ -215,67 +242,102 @@ class TestParseCoords:
         assert exc_info.value.code != 0
 
 
+# ── _sleep_interval ──────────────────────────────────────────────────────────
+
+class TestSleepInterval:
+
+    def setup_method(self):
+        tap._pause_event.clear()
+
+    def test_returns_early_when_paused(self):
+        tap._pause_event.set()
+        start = time.monotonic()
+        tap._sleep_interval(10.0)
+        assert time.monotonic() - start < 1.0
+
+    def test_sleeps_approximately_full_duration_when_running(self):
+        start = time.monotonic()
+        tap._sleep_interval(0.1)
+        elapsed = time.monotonic() - start
+        assert 0.08 <= elapsed <= 0.5
+
+
 # ── per-cycle interval ────────────────────────────────────────────────────────
 
 class TestPerCycleInterval:
-    """Sleep must fire once per cycle, not once per tap."""
+    """_sleep_interval must fire once per cycle, not once per tap."""
 
     def setup_method(self):
         tap._session_id = "sess"
+        tap._pause_event.clear()
 
     def test_sleep_called_once_per_cycle_not_per_tap(self):
-        sleep_calls = []
+        interval_calls = []
 
-        with patch("tap.tap_with_retry"), \
-             patch("tap.check_keypress", return_value=""), \
+        with patch("requests.get") as mock_get, \
+             patch("tap.tap_with_retry"), \
              patch("tap.get_or_create_session", return_value="sess"), \
-             patch("requests.get") as mock_get, \
-             patch("requests.post"), \
              patch("termios.tcgetattr", return_value=[]), \
              patch("termios.tcsetattr"), \
              patch("tty.setcbreak"), \
-             patch("time.sleep", side_effect=lambda s: sleep_calls.append(s)), \
+             patch("threading.Thread"), \
+             patch("tap._sleep_interval", side_effect=lambda s: interval_calls.append(s)), \
              patch("sys.argv", ["tap.py", "--coords", "700,400", "335,250", "--count", "2"]):
             mock_get.return_value.json.return_value = {"value": {"ready": True}}
             tap.main()
 
-        # 2 cycles, 2 coords each → 4 taps, but sleep only called once
-        # (after cycle 1; cycle 2 is last so no trailing sleep)
-        assert sleep_calls.count(1.0) == 1
+        # 2 cycles, 2 coords each — interval fires only after cycle 1
+        assert interval_calls == [1.0]
 
     def test_sleep_uses_interval_arg(self):
-        sleep_calls = []
+        interval_calls = []
 
-        with patch("tap.tap_with_retry"), \
-             patch("tap.check_keypress", return_value=""), \
+        with patch("requests.get") as mock_get, \
+             patch("tap.tap_with_retry"), \
              patch("tap.get_or_create_session", return_value="sess"), \
-             patch("requests.get") as mock_get, \
-             patch("requests.post"), \
              patch("termios.tcgetattr", return_value=[]), \
              patch("termios.tcsetattr"), \
              patch("tty.setcbreak"), \
-             patch("time.sleep", side_effect=lambda s: sleep_calls.append(s)), \
+             patch("threading.Thread"), \
+             patch("tap._sleep_interval", side_effect=lambda s: interval_calls.append(s)), \
              patch("sys.argv", ["tap.py", "--coords", "700,400", "--count", "3", "--interval", "0.25"]):
             mock_get.return_value.json.return_value = {"value": {"ready": True}}
             tap.main()
 
-        assert sleep_calls == [0.25, 0.25]
+        assert interval_calls == [0.25, 0.25]
 
 
-# ── check_keypress ────────────────────────────────────────────────────────────
+# ── _keyboard_listener ────────────────────────────────────────────────────────
 
-class TestCheckKeypress:
+class TestKeyboardListener:
 
-    def test_returns_key_when_stdin_has_data(self):
-        with patch("select.select", return_value=([sys.stdin], [], [])), \
-             patch.object(sys.stdin, "read", return_value="p"):
-            assert tap.check_keypress() == "p"
+    def setup_method(self):
+        tap._pause_event.clear()
 
-    def test_returns_space_when_space_pressed(self):
-        with patch("select.select", return_value=([sys.stdin], [], [])), \
-             patch.object(sys.stdin, "read", return_value=" "):
-            assert tap.check_keypress() == " "
+    def _run_listener_with_keys(self, keys):
+        """Feed key sequence into _keyboard_listener; stop via StopIteration."""
+        with patch.object(sys.stdin, "read", side_effect=keys + [StopIteration]):
+            try:
+                tap._keyboard_listener()
+            except StopIteration:
+                pass
 
-    def test_returns_empty_string_when_no_input_pending(self):
-        with patch("select.select", return_value=([], [], [])):
-            assert tap.check_keypress() == ""
+    def test_space_pauses(self):
+        self._run_listener_with_keys([" "])
+        assert tap._pause_event.is_set() is True
+
+    def test_p_pauses(self):
+        self._run_listener_with_keys(["p"])
+        assert tap._pause_event.is_set() is True
+
+    def test_space_toggles_resume(self):
+        self._run_listener_with_keys([" ", " "])
+        assert tap._pause_event.is_set() is False
+
+    def test_other_keys_ignored(self):
+        self._run_listener_with_keys(["x", "q", "\n"])
+        assert tap._pause_event.is_set() is False
+
+    def test_pause_then_resume_then_pause(self):
+        self._run_listener_with_keys([" ", " ", " "])
+        assert tap._pause_event.is_set() is True

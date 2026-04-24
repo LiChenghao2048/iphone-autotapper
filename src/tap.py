@@ -20,9 +20,9 @@ Controls:
 """
 
 import argparse
-import select
 import sys
 import termios
+import threading
 import time
 import tty
 import requests
@@ -32,6 +32,7 @@ WDA_URL = "http://127.0.0.1:8100"   # WDA forwarded via iproxy
 # ────────────────────────────────────────────────────────────────────────────
 
 _session_id: str = ""
+_pause_event = threading.Event()   # set = paused, clear = running
 
 
 def get_or_create_session() -> str:
@@ -72,7 +73,7 @@ def tap_with_retry(x: int, y: int) -> None:
     """Tap, reclaiming the WDA session whenever it has been stolen."""
     global _session_id
     attempt = 0
-    while True:
+    while not _pause_event.is_set():
         try:
             tap(_session_id, x, y)
             return
@@ -89,11 +90,22 @@ def tap_with_retry(x: int, y: int) -> None:
                 time.sleep(2)
 
 
-def check_keypress() -> str:
-    """Return a pressed key if one is waiting, otherwise empty string."""
-    if select.select([sys.stdin], [], [], 0)[0]:
-        return sys.stdin.read(1)
-    return ""
+def _sleep_interval(secs: float) -> None:
+    """Sleep for secs, waking up early if paused."""
+    _pause_event.wait(timeout=secs)
+
+
+def _keyboard_listener() -> None:
+    """Background thread: blocking stdin reads, toggles pause on Space/p."""
+    while True:
+        ch = sys.stdin.read(1)
+        if ch in (" ", "p"):
+            if _pause_event.is_set():
+                _pause_event.clear()
+                print("  [resumed]", flush=True)
+            else:
+                _pause_event.set()
+                print("\n  [paused]  press Space/p to resume", flush=True)
 
 
 def parse_coords(args) -> list:
@@ -147,31 +159,32 @@ def main():
     old_term = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin)
 
-    paused = False
+    _pause_event.clear()
+    threading.Thread(target=_keyboard_listener, daemon=True).start()
+
     cycle = 0
     tapped = 0
     try:
         while args.count == 0 or cycle < args.count:
-            key = check_keypress()
-            if key in (" ", "p"):
-                paused = not paused
-                if paused:
-                    print("\n  [paused]  press Space/p to resume", flush=True)
-                else:
-                    print("  [resumed]", flush=True)
-
-            if paused:
+            if _pause_event.is_set():
                 time.sleep(0.1)
                 continue
 
             for x, y in coords:
+                if _pause_event.is_set():
+                    break
                 tap_with_retry(x, y)
+                if _pause_event.is_set():
+                    break
                 tapped += 1
                 print(f"  tap #{tapped}  ({x}, {y})", end="\r", flush=True)
 
+            if _pause_event.is_set():
+                continue
+
             cycle += 1
             if args.count == 0 or cycle < args.count:
-                time.sleep(args.interval)
+                _sleep_interval(args.interval)
     except KeyboardInterrupt:
         print(f"\n\nStopped after {tapped} tap(s) across {cycle} cycle(s).")
     finally:
