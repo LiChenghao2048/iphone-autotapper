@@ -32,7 +32,7 @@ WDA_URL = "http://127.0.0.1:8100"   # WDA forwarded via iproxy
 # ────────────────────────────────────────────────────────────────────────────
 
 _session_id: str = ""
-_paused: bool = False
+_pause_event = threading.Event()   # set = paused, clear = running
 
 
 def get_or_create_session() -> str:
@@ -73,7 +73,7 @@ def tap_with_retry(x: int, y: int) -> None:
     """Tap, reclaiming the WDA session whenever it has been stolen."""
     global _session_id
     attempt = 0
-    while not _paused:
+    while not _pause_event.is_set():
         try:
             tap(_session_id, x, y)
             return
@@ -92,22 +92,20 @@ def tap_with_retry(x: int, y: int) -> None:
 
 def _sleep_interval(secs: float) -> None:
     """Sleep for secs, waking up early if paused."""
-    end = time.monotonic() + secs
-    while not _paused and time.monotonic() < end:
-        time.sleep(0.05)
+    _pause_event.wait(timeout=secs)
 
 
 def _keyboard_listener() -> None:
-    """Background thread: blocking stdin reads, toggles _paused on Space/p."""
-    global _paused
+    """Background thread: blocking stdin reads, toggles pause on Space/p."""
     while True:
         ch = sys.stdin.read(1)
         if ch in (" ", "p"):
-            _paused = not _paused
-            if _paused:
-                print("\n  [paused]  press Space/p to resume", flush=True)
-            else:
+            if _pause_event.is_set():
+                _pause_event.clear()
                 print("  [resumed]", flush=True)
+            else:
+                _pause_event.set()
+                print("\n  [paused]  press Space/p to resume", flush=True)
 
 
 def parse_coords(args) -> list:
@@ -161,26 +159,27 @@ def main():
     old_term = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin)
 
+    _pause_event.clear()
     threading.Thread(target=_keyboard_listener, daemon=True).start()
 
-    global _paused
-    _paused = False
     cycle = 0
     tapped = 0
     try:
         while args.count == 0 or cycle < args.count:
-            if _paused:
+            if _pause_event.is_set():
                 time.sleep(0.05)
                 continue
 
             for x, y in coords:
-                if _paused:
+                if _pause_event.is_set():
                     break
                 tap_with_retry(x, y)
+                if _pause_event.is_set():
+                    break
                 tapped += 1
                 print(f"  tap #{tapped}  ({x}, {y})", end="\r", flush=True)
 
-            if _paused:
+            if _pause_event.is_set():
                 continue
 
             cycle += 1

@@ -6,8 +6,9 @@ instance is required.
 """
 
 import sys
+import time
 import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 import tap
 
@@ -96,7 +97,7 @@ class TestTapWithRetry:
 
     def setup_method(self):
         tap._session_id = "initial_session"
-        tap._paused = False
+        tap._pause_event.clear()
 
     def test_succeeds_on_first_attempt(self):
         with patch("tap.tap") as mock_tap:
@@ -153,6 +154,12 @@ class TestTapWithRetry:
         assert used_sessions[1] == "initial_session"
         # Third tap uses the successfully recovered session
         assert used_sessions[2] == "recovered"
+
+    def test_exits_immediately_when_paused_before_tap(self):
+        tap._pause_event.set()
+        with patch("tap.tap") as mock_tap:
+            tap.tap_with_retry(0, 0)
+        mock_tap.assert_not_called()
 
     def test_prints_stderr_warning_after_10_consecutive_failures(self, capsys):
         call_n = {"n": 0}
@@ -216,6 +223,26 @@ class TestParseCoords:
         assert exc_info.value.code != 0
 
 
+# ── _sleep_interval ──────────────────────────────────────────────────────────
+
+class TestSleepInterval:
+
+    def setup_method(self):
+        tap._pause_event.clear()
+
+    def test_returns_early_when_paused(self):
+        tap._pause_event.set()
+        start = time.monotonic()
+        tap._sleep_interval(10.0)
+        assert time.monotonic() - start < 1.0
+
+    def test_sleeps_approximately_full_duration_when_running(self):
+        start = time.monotonic()
+        tap._sleep_interval(0.1)
+        elapsed = time.monotonic() - start
+        assert 0.08 <= elapsed <= 0.5
+
+
 # ── per-cycle interval ────────────────────────────────────────────────────────
 
 class TestPerCycleInterval:
@@ -223,7 +250,7 @@ class TestPerCycleInterval:
 
     def setup_method(self):
         tap._session_id = "sess"
-        tap._paused = False
+        tap._pause_event.clear()
 
     def test_sleep_called_once_per_cycle_not_per_tap(self):
         interval_calls = []
@@ -266,7 +293,7 @@ class TestPerCycleInterval:
 class TestKeyboardListener:
 
     def setup_method(self):
-        tap._paused = False
+        tap._pause_event.clear()
 
     def _run_listener_with_keys(self, keys):
         """Feed key sequence into _keyboard_listener; stop via StopIteration."""
@@ -278,20 +305,20 @@ class TestKeyboardListener:
 
     def test_space_pauses(self):
         self._run_listener_with_keys([" "])
-        assert tap._paused is True
+        assert tap._pause_event.is_set() is True
 
     def test_p_pauses(self):
         self._run_listener_with_keys(["p"])
-        assert tap._paused is True
+        assert tap._pause_event.is_set() is True
 
     def test_space_toggles_resume(self):
         self._run_listener_with_keys([" ", " "])
-        assert tap._paused is False
+        assert tap._pause_event.is_set() is False
 
     def test_other_keys_ignored(self):
         self._run_listener_with_keys(["x", "q", "\n"])
-        assert tap._paused is False
+        assert tap._pause_event.is_set() is False
 
     def test_pause_then_resume_then_pause(self):
         self._run_listener_with_keys([" ", " ", " "])
-        assert tap._paused is True
+        assert tap._pause_event.is_set() is True
