@@ -14,6 +14,7 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
   appium driver install xcuitest
   ```
 - **iproxy** — install via `brew install libimobiledevice`
+- **pymobiledevice3** (needed to enable Developer Mode on iOS 26+ beta): `pip3 install pymobiledevice3`
 - iPhone **trusted** on this Mac (connect via USB → tap *Trust* on the phone)
 
 ---
@@ -54,7 +55,7 @@ xcodebuild build-for-testing \
   -allowProvisioningUpdates \
   DEVELOPMENT_TEAM="$TEAM" \
   CODE_SIGNING_REQUIRED=YES \
-  CODE_SIGN_IDENTITY="iPhone Developer" \
+  CODE_SIGN_IDENTITY="Apple Development" \
   PRODUCT_BUNDLE_IDENTIFIER="com.$TEAM.WebDriverAgentRunner"
 
 xcrun devicectl device install app --device "$UDID" \
