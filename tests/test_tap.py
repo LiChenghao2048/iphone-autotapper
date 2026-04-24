@@ -161,6 +161,25 @@ class TestTapWithRetry:
             tap.tap_with_retry(0, 0)
         mock_tap.assert_not_called()
 
+    def test_exits_retry_loop_when_paused_between_retries(self):
+        tap_calls = {"n": 0}
+
+        def tap_effect(session_id, x, y):
+            tap_calls["n"] += 1
+            raise RuntimeError("session stolen")
+
+        def reclaim_effect():
+            tap._pause_event.set()   # pause fires during session reclaim
+            return "new_session"
+
+        with patch("tap.tap", side_effect=tap_effect), \
+             patch("tap.get_or_create_session", side_effect=reclaim_effect), \
+             patch("time.sleep"):
+            tap.tap_with_retry(0, 0)
+
+        # only the first tap attempt was made; loop exited after pause set in reclaim
+        assert tap_calls["n"] == 1
+
     def test_prints_stderr_warning_after_10_consecutive_failures(self, capsys):
         call_n = {"n": 0}
 

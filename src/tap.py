@@ -167,7 +167,7 @@ def main():
     try:
         while args.count == 0 or cycle < args.count:
             if _pause_event.is_set():
-                time.sleep(0.05)
+                time.sleep(0.1)
                 continue
 
             for x, y in coords:
