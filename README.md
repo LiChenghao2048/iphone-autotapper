@@ -14,25 +14,59 @@ Repeatedly taps a fixed coordinate on a connected iPhone via WebDriverAgent (WDA
   appium driver install xcuitest
   ```
 - **iproxy** — install via `brew install libimobiledevice`
+- **pymobiledevice3** (needed to enable Developer Mode on iOS 26+ beta): `pip3 install pymobiledevice3`
 - iPhone **trusted** on this Mac (connect via USB → tap *Trust* on the phone)
 
 ---
 
 ## Setup
 
-1. Copy `.env.example` to `.env` in the project root and fill in your values:
-   ```bash
-   cp .env.example .env
-   ```
+### 1. Configure `.env`
 
-   | Variable | How to find it |
-   |---|---|
-   | `UDID` | `xcrun devicectl list devices` |
-   | `TEAM` | Xcode → Signing & Capabilities → Team ID |
+```bash
+cp .env.example .env
+```
 
-2. Build and install WDA onto your device (one-time, see [7-day certificate renewal](#7-day-certificate-renewal) for the commands).
+| Variable | How to find it |
+|---|---|
+| `UDID` | `xcrun devicectl list devices` |
+| `TEAM` | Xcode → Signing & Capabilities → Team ID |
 
-3. After the WDA runner app is installed on your device, go to **Settings → VPN & Device Management** on the iPhone, find your developer certificate, and tap **Trust**. This is required the first time only.
+### 2. Enable Developer Mode on the iPhone
+
+**Settings → Privacy & Security → Developer Mode → ON** (phone reboots).
+
+If you can't find it in Settings, run with the phone connected:
+```bash
+sudo pymobiledevice3 amfi enable-developer-mode
+```
+
+### 3. Build and install WDA
+
+```bash
+source .env
+WDA_DIR=~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent
+
+xcodebuild build-for-testing \
+  -project "$WDA_DIR/WebDriverAgent.xcodeproj" \
+  -scheme WebDriverAgentRunner \
+  -destination "id=$UDID" \
+  -derivedDataPath /tmp/wda-build \
+  -allowProvisioningUpdates \
+  DEVELOPMENT_TEAM="$TEAM" \
+  CODE_SIGNING_REQUIRED=YES \
+  CODE_SIGN_IDENTITY="Apple Development" \
+  PRODUCT_BUNDLE_IDENTIFIER="com.$TEAM.WebDriverAgentRunner"
+
+xcrun devicectl device install app --device "$UDID" \
+  /tmp/wda-build/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app
+```
+
+### 4. Trust the certificate on the iPhone
+
+**Settings → General → VPN & Device Management** → tap your developer certificate → **Trust**.
+
+> The certificate only appears after step 3 completes. You must re-trust after every [7-day renewal](#7-day-certificate-renewal).
 
 ---
 
@@ -112,30 +146,7 @@ Known working coordinates:
 
 ## 7-day certificate renewal
 
-Free accounts expire every 7 days. When `scripts/start_wda.py` fails, rebuild WDA:
-
-```bash
-source .env
-WDA_DIR=~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent
-
-# 1. Build
-xcodebuild -project "$WDA_DIR/WebDriverAgent.xcodeproj" \
-  -scheme WebDriverAgentRunner \
-  -destination "id=$UDID" \
-  CODE_SIGN_STYLE=Automatic \
-  CODE_SIGN_IDENTITY="Apple Development" \
-  DEVELOPMENT_TEAM="$TEAM" \
-  PRODUCT_BUNDLE_IDENTIFIER="com.$TEAM.WebDriverAgentRunner" \
-  -configuration Debug \
-  -allowProvisioningUpdates \
-  build
-
-# 2. Install
-WDA_APP=$(ls -d ~/Library/Developer/Xcode/DerivedData/WebDriverAgent-*/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app)
-xcrun devicectl device install app --device "$UDID" "$WDA_APP"
-```
-
-No need to re-trust on the phone after renewal.
+Free accounts expire every 7 days. When `scripts/start_wda.py` fails, re-run steps 3 and 4 from [Setup](#setup) (build + install + re-trust on the phone).
 
 ---
 
