@@ -1,23 +1,46 @@
-# Brawl Stars sequence — edit coordinates to match your screen layout.
+# Brawl Stars sequence
 # Run with: python3 src/sequence.py --preset brawl_stars
+# Loops forever by default (--count 0). Pass --count N to limit iterations.
+
+- type: swipe
+  x1: 235
+  y1: 236
+  x2: 349
+  y2: 221
+  duration_ms: 2000
+
+- type: wait
+  ms: 1000
 
 - type: tap
   x: 700
   y: 400
 
-- type: wait
-  ms: 500
+- type: tap
+  x: 335
+  y: 250
 
-- type: swipe
-  x1: 215
-  y1: 466
-  x2: 300
-  y2: 400
-  duration_ms: 300
+- type: tap
+  x: 860
+  y: 400
 
 - type: wait
   ms: 2000
 
 - type: tap
-  x: 700
-  y: 400
+  x: 626
+  y: 92
+
+- type: swipe
+  x1: 194
+  y1: 87
+  x2: 90
+  y2: 218
+  duration_ms: 5000
+
+- type: tap
+  x: 578
+  y: 94
+
+- type: wait
+  ms: 12000
