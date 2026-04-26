@@ -6,6 +6,7 @@ is required.
 """
 
 import pytest
+import requests
 from unittest.mock import patch, MagicMock
 
 from gestures import swipe
@@ -86,6 +87,24 @@ class TestSwipe:
         resp.status_code = 500
         with patch("requests.post", return_value=resp):
             with pytest.raises(RuntimeError, match="WDA rejected swipe"):
+                swipe.swipe("sess1", 0, 0, 100, 100)
+
+    def test_raises_value_error_on_zero_duration(self):
+        with pytest.raises(ValueError, match="duration_ms must be positive"):
+            swipe.swipe("sess1", 0, 0, 100, 100, duration_ms=0)
+
+    def test_raises_value_error_on_negative_duration(self):
+        with pytest.raises(ValueError, match="duration_ms must be positive"):
+            swipe.swipe("sess1", 0, 0, 100, 100, duration_ms=-100)
+
+    def test_raises_on_connection_error(self):
+        with patch("requests.post", side_effect=requests.ConnectionError("refused")):
+            with pytest.raises(requests.ConnectionError):
+                swipe.swipe("sess1", 0, 0, 100, 100)
+
+    def test_raises_on_timeout(self):
+        with patch("requests.post", side_effect=requests.Timeout("timed out")):
+            with pytest.raises(requests.Timeout):
                 swipe.swipe("sess1", 0, 0, 100, 100)
 
     def test_default_duration_is_500ms(self):
@@ -190,6 +209,28 @@ class TestMain:
 
     def test_missing_required_arg_exits_with_error(self):
         with patch("sys.argv", ["swipe.py", "--x1", "0", "--y1", "0", "--x2", "100"]):
+            with pytest.raises(SystemExit) as exc_info:
+                swipe.main()
+        assert exc_info.value.code != 0
+
+    def test_exits_when_swipe_raises_runtime_error(self):
+        status_resp = MagicMock()
+        status_resp.json.return_value = {"value": {"ready": True}}
+        with patch("requests.get", return_value=status_resp), \
+             patch("gestures.swipe.get_or_create_session", return_value="sess1"), \
+             patch("gestures.swipe.swipe", side_effect=RuntimeError("WDA rejected swipe (HTTP 500)")), \
+             patch("sys.argv", ["swipe.py", "--x1", "0", "--y1", "0", "--x2", "100", "--y2", "100"]):
+            with pytest.raises(SystemExit) as exc_info:
+                swipe.main()
+        assert exc_info.value.code != 0
+
+    def test_exits_when_swipe_raises_connection_error(self):
+        status_resp = MagicMock()
+        status_resp.json.return_value = {"value": {"ready": True}}
+        with patch("requests.get", return_value=status_resp), \
+             patch("gestures.swipe.get_or_create_session", return_value="sess1"), \
+             patch("gestures.swipe.swipe", side_effect=requests.ConnectionError("refused")), \
+             patch("sys.argv", ["swipe.py", "--x1", "0", "--y1", "0", "--x2", "100", "--y2", "100"]):
             with pytest.raises(SystemExit) as exc_info:
                 swipe.main()
         assert exc_info.value.code != 0

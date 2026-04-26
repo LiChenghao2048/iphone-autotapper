@@ -33,9 +33,12 @@ def get_or_create_session() -> str:
 def swipe(session_id: str, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 500) -> None:
     """Swipe from (x1, y1) to (x2, y2) over duration_ms milliseconds.
 
-    Raises RuntimeError if WDA rejects the request.
+    Raises ValueError for non-positive duration_ms.
+    Raises RuntimeError if WDA rejects the request or a network error occurs.
     The HTTP timeout is set to duration_ms + 2s so it always outlasts the gesture.
     """
+    if duration_ms <= 0:
+        raise ValueError(f"duration_ms must be positive, got {duration_ms}")
     r = requests.post(
         f"{WDA_URL}/session/{session_id}/actions",
         json={
@@ -55,6 +58,15 @@ def swipe(session_id: str, x1: int, y1: int, x2: int, y2: int, duration_ms: int 
     )
     if r.status_code != 200:
         raise RuntimeError(f"WDA rejected swipe (HTTP {r.status_code})")
+
+
+def _swipe_or_exit(session_id: str, x1: int, y1: int, x2: int, y2: int, duration_ms: int) -> None:
+    """Call swipe(), printing errors and exiting on failure."""
+    try:
+        swipe(session_id, x1, y1, x2, y2, duration_ms)
+    except (RuntimeError, requests.RequestException) as e:
+        print(f"ERROR: swipe failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main():
@@ -78,7 +90,7 @@ def main():
     print(f"Session: {session_id}")
     print(f"Swiping ({args.x1},{args.y1}) → ({args.x2},{args.y2}) over {args.duration}ms")
 
-    swipe(session_id, args.x1, args.y1, args.x2, args.y2, args.duration)
+    _swipe_or_exit(session_id, args.x1, args.y1, args.x2, args.y2, args.duration)
     print("Done.")
 
 
