@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
 import sequence
-from sequence import Tap, Swipe, Wait, load_preset, run_sequence, _interruptible_sleep
+from sequence import Tap, Swipe, Wait, load_preset, run_sequence, _interruptible_sleep, _keyboard_listener
 
 
 # ── load_preset ───────────────────────────────────────────────────────────────
@@ -160,6 +160,38 @@ class TestRunSequence:
         assert unpaused.is_set()
 
 
+# ── _keyboard_listener ───────────────────────────────────────────────────────
+
+class TestKeyboardListener:
+
+    def setup_method(self):
+        sequence._pause_event.clear()
+
+    def _run(self, keys):
+        with patch.object(sys.stdin, "read", side_effect=keys):
+            _keyboard_listener()
+
+    def test_space_pauses(self):
+        self._run([" ", ""])
+        assert sequence._pause_event.is_set()
+
+    def test_p_pauses(self):
+        self._run(["p", ""])
+        assert sequence._pause_event.is_set()
+
+    def test_space_toggles_resume(self):
+        self._run([" ", " ", ""])
+        assert not sequence._pause_event.is_set()
+
+    def test_other_keys_ignored(self):
+        self._run(["x", "q", ""])
+        assert not sequence._pause_event.is_set()
+
+    def test_eof_breaks_loop(self):
+        # Empty string from read() signals EOF; listener must return cleanly.
+        self._run([""])  # immediate EOF — should not spin
+
+
 # ── _interruptible_sleep ──────────────────────────────────────────────────────
 
 class TestInterruptibleSleep:
@@ -209,6 +241,17 @@ class TestMain:
         with patch("sys.argv", ["sequence.py", "--preset", "p"]), \
              patch.object(sequence, "PRESETS_DIR", tmp_path), \
              patch("requests.get", side_effect=ConnectionRefusedError):
+            with pytest.raises(SystemExit) as exc:
+                sequence.main()
+        assert exc.value.code != 0
+
+    def test_exits_when_wda_not_ready(self, tmp_path):
+        (tmp_path / "p.yaml").write_text("- type: tap\n  x: 1\n  y: 2\n")
+        resp = MagicMock()
+        resp.json.return_value = {"value": {"ready": False}}
+        with patch("sys.argv", ["sequence.py", "--preset", "p"]), \
+             patch.object(sequence, "PRESETS_DIR", tmp_path), \
+             patch("requests.get", return_value=resp):
             with pytest.raises(SystemExit) as exc:
                 sequence.main()
         assert exc.value.code != 0

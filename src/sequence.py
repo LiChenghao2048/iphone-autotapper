@@ -18,7 +18,6 @@ Controls:
 """
 
 import argparse
-import importlib.resources
 import sys
 import termios
 import threading
@@ -131,6 +130,8 @@ def _interruptible_sleep(secs: float) -> None:
 def _keyboard_listener() -> None:
     while True:
         ch = sys.stdin.read(1)
+        if not ch:
+            break
         if ch in (" ", "p"):
             if _pause_event.is_set():
                 _pause_event.clear()
@@ -155,7 +156,8 @@ def main():
     print(f"Connecting to WDA at {WDA_URL} ...")
     try:
         r = requests.get(f"{WDA_URL}/status", timeout=5)
-        assert r.json()["value"]["ready"], "WDA not ready"
+        if not r.json()["value"]["ready"]:
+            raise RuntimeError("WDA not ready")
     except Exception as e:
         print(f"ERROR: WDA not reachable: {e}", file=sys.stderr)
         sys.exit(1)
@@ -168,10 +170,9 @@ def main():
 
     old_term = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin)
-    _pause_event.clear()
-    threading.Thread(target=_keyboard_listener, daemon=True).start()
-
     try:
+        _pause_event.clear()
+        threading.Thread(target=_keyboard_listener, daemon=True).start()
         run_sequence(steps, session_id, args.count)
     except KeyboardInterrupt:
         print("\n\nStopped.")
