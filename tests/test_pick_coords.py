@@ -83,6 +83,22 @@ class TestBuildHtml:
         state_b = {"b64": "BBB", "px_w": 9, "px_h": 18}
         assert pick_coords.build_html(state_a) != pick_coords.build_html(state_b)
 
+    def test_bounds_check_uses_exclusive_upper_bound(self):
+        # Locks the >= operator so an off-by-one regression is caught at the
+        # template level without requiring a browser.
+        state = {"b64": "x", "px_w": 9, "px_h": 18}
+        html = pick_coords.build_html(state)
+        assert "tx >= maxTx" in html
+        assert "ty >= maxTy" in html
+
+    def test_out_of_range_error_message_shows_max_minus_one(self):
+        # The valid upper bound is maxTx-1, so the error message must display
+        # (maxTx - 1) and (maxTy - 1), not maxTx/maxTy.
+        state = {"b64": "x", "px_w": 9, "px_h": 18}
+        html = pick_coords.build_html(state)
+        assert "(maxTx - 1)" in html
+        assert "(maxTy - 1)" in html
+
 
 # ── Handler (via make_handler + real loopback server) ─────────────────────────
 
