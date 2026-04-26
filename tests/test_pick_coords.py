@@ -238,3 +238,61 @@ class TestHandler:
         finally:
             server.shutdown()
             t.join(timeout=2)
+
+
+# ── /tap route ────────────────────────────────────────────────────────────────
+
+class TestTapEndpoint:
+
+    def test_tap_returns_ok_true_and_calls_tap(self, handler_server):
+        port, _, _ = handler_server
+        with patch("pick_coords.get_or_create_session", return_value="fake-sid"), \
+             patch("pick_coords.tap") as mock_tap:
+            status, ctype, body = _http_get(port, "/tap?tx=100&ty=200")
+        assert status == 200
+        assert "application/json" in ctype
+        data = json.loads(body)
+        assert data == {"ok": True}
+        mock_tap.assert_called_once_with("fake-sid", 100, 200)
+
+    def test_tap_returns_ok_false_on_session_error(self, handler_server):
+        port, _, _ = handler_server
+        with patch("pick_coords.get_or_create_session", side_effect=RuntimeError("WDA down")):
+            status, ctype, body = _http_get(port, "/tap?tx=50&ty=60")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "WDA down" in data["error"]
+
+    def test_tap_returns_ok_false_on_tap_error(self, handler_server):
+        port, _, _ = handler_server
+        with patch("pick_coords.get_or_create_session", return_value="sid"), \
+             patch("pick_coords.tap", side_effect=RuntimeError("session stolen")):
+            status, ctype, body = _http_get(port, "/tap?tx=10&ty=20")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "session stolen" in data["error"]
+
+    def test_tap_missing_params_returns_ok_false(self, handler_server):
+        port, _, _ = handler_server
+        status, ctype, body = _http_get(port, "/tap")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "error" in data
+
+    def test_tap_non_integer_params_returns_ok_false(self, handler_server):
+        port, _, _ = handler_server
+        status, ctype, body = _http_get(port, "/tap?tx=foo&ty=bar")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "error" in data
+
+    def test_tap_partial_params_returns_ok_false(self, handler_server):
+        port, _, _ = handler_server
+        status, ctype, body = _http_get(port, "/tap?tx=100")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False

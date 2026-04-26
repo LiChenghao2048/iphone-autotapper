@@ -4,6 +4,7 @@ Interactive coordinate picker — screenshots the iPhone then opens in your brow
 Hover to see tap.py coordinates (pixels ÷ scale already done).
 Click to print the ready-to-run tap.py command.
 Press the Refresh button (or R) to re-take the screenshot without restarting.
+Press C while hovering to tap the iPhone at the hovered coordinate.
 
 Usage:
     python3 pick_coords.py               # screenshot + open picker
@@ -23,7 +24,8 @@ from urllib.parse import urlparse, parse_qs
 import requests
 from PIL import Image
 
-from _session import WDA_URL
+from _session import WDA_URL, get_or_create_session
+from gestures.tap import tap
 from screenshot import take_screenshot
 
 SCALE   = 3    # iPhone 14 Pro Max: 3× screen (pixels ÷ 3 = logical points)
@@ -57,13 +59,18 @@ html_template = """<!DOCTYPE html>
   #tap    {{ color: #4ec9b0; font-size: 17px; font-weight: bold; }}
   #px     {{ color: #888; font-size: 13px; }}
   #hint   {{ color: #555; font-size: 12px; margin-left: auto; }}
-  #refbtn {{
+  #refbtn, #gobtn {{
     background: #2a2a2a; border: 1px solid #555; color: #ccc;
     padding: 4px 12px; font-family: monospace; font-size: 13px;
     cursor: pointer; border-radius: 3px;
   }}
-  #refbtn:hover {{ background: #333; color: #fff; }}
+  #refbtn:hover, #gobtn:hover {{ background: #333; color: #fff; }}
   #refbtn.spinning {{ color: #4ec9b0; border-color: #4ec9b0; }}
+  #coordin {{
+    width: 80px; background: #2a2a2a; border: 1px solid #555; color: #ccc;
+    padding: 3px 6px; font-family: monospace; font-size: 13px; border-radius: 3px;
+  }}
+  #goerr {{ color: #c44; font-size: 12px; }}
   #wrap {{ margin-top: 52px; position: relative; display: inline-block; cursor: crosshair; }}
   img   {{ display: block; max-width: 100vw; }}
   #crossH, #crossV {{
@@ -85,7 +92,10 @@ html_template = """<!DOCTYPE html>
   <div id="tap">Hover over the image</div>
   <div id="px"></div>
   <button id="refbtn" title="Re-take screenshot (R)">&#x21bb; Refresh</button>
-  <div id="hint">image {px_w}×{px_h}px · scale {SCALE}× · click to lock</div>
+  <input id="coordin" type="text" placeholder="x,y" title="Jump to logical point coordinates">
+  <button id="gobtn">Go</button>
+  <span id="goerr"></span>
+  <div id="hint">image {px_w}×{px_h}px · scale {SCALE}× · click to lock · C to tap</div>
 </div>
 <div id="wrap">
   <img id="img" src="data:image/png;base64,{b64}" draggable="false">
@@ -106,6 +116,11 @@ const pxEl   = document.getElementById('px');
 const logEl  = document.getElementById('log');
 const refBtn = document.getElementById('refbtn');
 const hint   = document.getElementById('hint');
+const coordIn = document.getElementById('coordin');
+const gobtn   = document.getElementById('gobtn');
+const goerr   = document.getElementById('goerr');
+
+let lastTx = null, lastTy = null;
 
 function getCoords(e) {{
   const r     = imgEl.getBoundingClientRect();
@@ -118,8 +133,15 @@ function getCoords(e) {{
   return {{dispX, dispY, px, py, tx, ty}};
 }}
 
+function logEntry(html) {{
+  const entry = document.createElement('div');
+  entry.innerHTML = html;
+  logEl.appendChild(entry);
+}}
+
 wrap.addEventListener('mousemove', e => {{
   const {{dispX, dispY, px, py, tx, ty}} = getCoords(e);
+  lastTx = tx; lastTy = ty;
   crossH.style.top  = dispY + 'px';
   crossV.style.left = dispX + 'px';
   tapEl.textContent = `python3 src/tap.py --x ${{tx}} --y ${{ty}}`;
@@ -145,14 +167,10 @@ async function doRefresh() {{
     imgEl.src = 'data:image/png;base64,' + data.b64;
     PX_W = data.px_w;
     PX_H = data.px_h;
-    hint.textContent = `image ${{data.px_w}}×${{data.px_h}}px · scale {SCALE}× · click to lock`;
-    const entry = document.createElement('div');
-    entry.innerHTML = '<span style="color:#888">— screenshot refreshed —</span>';
-    logEl.appendChild(entry);
+    hint.textContent = `image ${{data.px_w}}×${{data.px_h}}px · scale {SCALE}× · click to lock · C to tap`;
+    logEntry('<span style="color:#888">— screenshot refreshed —</span>');
   }} catch(e) {{
-    const entry = document.createElement('div');
-    entry.innerHTML = '<span style="color:#c44">refresh failed: ' + e + '</span>';
-    logEl.appendChild(entry);
+    logEntry('<span style="color:#c44">refresh failed: ' + e + '</span>');
   }}
   refBtn.textContent = '↻ Refresh';
   refBtn.classList.remove('spinning');
@@ -163,7 +181,59 @@ refBtn.addEventListener('click', doRefresh);
 
 document.addEventListener('keydown', e => {{
   if (e.key === 'r' || e.key === 'R') doRefresh();
+  if (e.key === 'c' || e.key === 'C') {{
+    if (lastTx === null) {{
+      logEntry('<span style="color:#888">C pressed — hover over image first</span>');
+      return;
+    }}
+    const tx = lastTx, ty = lastTy;
+    fetch('/tap?tx=' + tx + '&ty=' + ty)
+      .then(r => r.json())
+      .then(data => {{
+        if (data.ok) {{
+          logEntry('<span style="color:#4ec9b0">tapped (' + tx + ', ' + ty + ')</span>');
+        }} else {{
+          logEntry('<span style="color:#c44">tap failed: ' + (data.error || 'unknown') + '</span>');
+        }}
+      }})
+      .catch(err => {{
+        logEntry('<span style="color:#c44">tap failed: ' + err + '</span>');
+      }});
+  }}
 }});
+
+const intRe = /^\\s*-?\\d+\\s*$/;
+
+function goToCoord() {{
+  const val   = coordIn.value.trim();
+  const parts = val.split(',');
+  if (parts.length !== 2 || !intRe.test(parts[0]) || !intRe.test(parts[1])) {{
+    goerr.textContent = 'Use format x,y (integers)';
+    return;
+  }}
+  const tx = parseInt(parts[0], 10);
+  const ty = parseInt(parts[1], 10);
+  const maxTx = Math.floor(PX_W / SCALE);
+  const maxTy = Math.floor(PX_H / SCALE);
+  if (tx < 0 || tx > maxTx || ty < 0 || ty > maxTy) {{
+    goerr.textContent = 'Out of range (0–' + maxTx + ', 0–' + maxTy + ')';
+    return;
+  }}
+  goerr.textContent = '';
+  const px    = tx * SCALE;
+  const py    = ty * SCALE;
+  const r     = imgEl.getBoundingClientRect();
+  const dispX = px * (r.width  / PX_W);
+  const dispY = py * (r.height / PX_H);
+  crossH.style.top  = dispY + 'px';
+  crossV.style.left = dispX + 'px';
+  tapEl.textContent = `python3 src/tap.py --x ${{tx}} --y ${{ty}}`;
+  pxEl.textContent  = `pixel (${{px}}, ${{py}})`;
+  lastTx = tx; lastTy = ty;
+}}
+
+gobtn.addEventListener('click', goToCoord);
+coordIn.addEventListener('keydown', e => {{ if (e.key === 'Enter') goToCoord(); }});
 </script>
 </body>
 </html>"""
@@ -191,6 +261,25 @@ def make_handler(state: dict, args) -> type:
                 print(f"  python3 src/tap.py --x {tx} --y {ty}   (pixel {px}, {py})")
                 self.send_response(200)
                 self.end_headers()
+
+            elif self.path.startswith("/tap"):
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    tx = int(q["tx"][0])
+                    ty = int(q["ty"][0])
+                except (KeyError, ValueError, IndexError):
+                    payload = json.dumps({"ok": False, "error": "tx and ty must be integers"})
+                else:
+                    try:
+                        session_id = get_or_create_session()
+                        tap(session_id, tx, ty)
+                        payload = json.dumps({"ok": True})
+                    except Exception as e:
+                        payload = json.dumps({"ok": False, "error": str(e)})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(payload.encode())
 
             elif self.path == "/refresh":
                 print("  Refreshing screenshot...")
@@ -255,7 +344,7 @@ def main():
     pt_w, pt_h = px_w // SCALE, px_h // SCALE
     print(f"Size: {px_w}×{px_h} px  →  {pt_w}×{pt_h} pts  (scale {SCALE}×)")
     print(f"Opening picker at http://127.0.0.1:{PORT}")
-    print("Hover to preview · click to print tap.py command · R to refresh · Ctrl+C to quit\n")
+    print("Hover to preview · click to print tap.py command · R to refresh · C to tap · Ctrl+C to quit\n")
 
     server = http.server.HTTPServer(("127.0.0.1", PORT), make_handler(state, args))
     threading.Thread(target=server.serve_forever, daemon=True).start()
