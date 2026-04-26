@@ -180,8 +180,9 @@ async function doRefresh() {{
 refBtn.addEventListener('click', doRefresh);
 
 document.addEventListener('keydown', e => {{
+  if (e.target === coordIn) return;
   if (e.key === 'r' || e.key === 'R') doRefresh();
-  if (e.key === 'c' || e.key === 'C') {{
+  if ((e.key === 'c' || e.key === 'C') && !e.repeat) {{
     if (lastTx === null) {{
       logEntry('<span style="color:#888">C pressed — hover over image first</span>');
       return;
@@ -215,7 +216,7 @@ function goToCoord() {{
   const ty = parseInt(parts[1], 10);
   const maxTx = Math.floor(PX_W / SCALE);
   const maxTy = Math.floor(PX_H / SCALE);
-  if (tx < 0 || tx > maxTx || ty < 0 || ty > maxTy) {{
+  if (tx < 0 || tx >= maxTx || ty < 0 || ty >= maxTy) {{
     goerr.textContent = 'Out of range (0–' + maxTx + ', 0–' + maxTy + ')';
     return;
   }}
