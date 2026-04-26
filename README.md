@@ -82,19 +82,28 @@ Wait for: `WDA is live at http://127.0.0.1:8100`
 **Terminal 2 — tap:**
 ```bash
 # Single coordinate — tap forever at 1s interval
-python3 src/tap.py --coords "701,402"
+python3 src/gestures/tap.py --coords "701,402"
 
 # Multiple coordinates — tapped in sequence each cycle
-python3 src/tap.py --coords "700,400" "335,250" "860,400"
+python3 src/gestures/tap.py --coords "700,400" "335,250" "860,400"
 
 # Faster cycle rate
-python3 src/tap.py --coords "700,400" "335,250" --interval 0.5
+python3 src/gestures/tap.py --coords "700,400" "335,250" --interval 0.5
 
 # Run exactly 60 cycles then stop
-python3 src/tap.py --coords "700,400" "335,250" --count 60
+python3 src/gestures/tap.py --coords "700,400" "335,250" --count 60
 ```
 
-`Ctrl+C` to stop.
+**Terminal 2 — swipe:**
+```bash
+# Swipe from (100,400) to (300,400) with default 500ms duration
+python3 src/gestures/swipe.py --x1 100 --y1 400 --x2 300 --y2 400
+
+# Slower swipe (1 second)
+python3 src/gestures/swipe.py --x1 100 --y1 400 --x2 300 --y2 400 --duration 1000
+```
+
+`Ctrl+C` to stop tap.py.
 
 ---
 
@@ -109,7 +118,7 @@ While `tap.py` is running in the terminal:
 
 ---
 
-## Options
+## Options — tap.py
 
 | Flag | Default | Description |
 |---|---|---|
@@ -118,6 +127,16 @@ While `tap.py` is running in the terminal:
 | `--y` | 466 | Vertical coordinate — single-coord fallback when `--coords` is omitted |
 | `--interval` | 1.0 | Seconds between cycles (sleep fires once after all coords are tapped) |
 | `--count` | 0 | Cycles to perform — 0 = run forever |
+
+## Options — swipe.py
+
+| Flag | Default | Description |
+|---|---|---|
+| `--x1` | required | Start X coordinate (points) |
+| `--y1` | required | Start Y coordinate (points) |
+| `--x2` | required | End X coordinate (points) |
+| `--y2` | required | End Y coordinate (points) |
+| `--duration` | 500 | Swipe motion duration in milliseconds |
 
 ---
 
@@ -164,14 +183,16 @@ pytest
 ## Stack
 
 ```
-src/tap.py ──HTTP──▶ WDA (port 8100)
-                     │
-                 iproxy (USB)
-                     │
-                 WDA runner on iPhone (XCUITest)
+src/gestures/tap.py   ──HTTP──▶ WDA (port 8100)
+src/gestures/swipe.py ──HTTP──▶ WDA (port 8100)
+                                │
+                            iproxy (USB)
+                                │
+                            WDA runner on iPhone (XCUITest)
 ```
 
 - `scripts/start_wda.py` — launches `xcodebuild test-without-building` + `iproxy 8100 8100`
-- `src/tap.py` — posts W3C pointer actions to WDA HTTP API
+- `src/gestures/tap.py` — posts W3C pointer tap actions to WDA HTTP API
+- `src/gestures/swipe.py` — posts W3C pointer swipe actions to WDA HTTP API
 - `src/pick_coords.py` — screenshot + browser coordinate picker
 - WDA built from: `~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/`

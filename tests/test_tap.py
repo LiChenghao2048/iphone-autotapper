@@ -1,5 +1,5 @@
 """
-Unit tests for tap.py.
+Unit tests for gestures/tap.py.
 
 All network and stdin I/O is mocked at the boundary so no real device or WDA
 instance is required.
@@ -10,7 +10,7 @@ import time
 import pytest
 from unittest.mock import patch, MagicMock
 
-import tap
+from gestures import tap
 
 
 # ── get_or_create_session ─────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ class TestTapWithRetry:
         tap._pause_event.clear()
 
     def test_succeeds_on_first_attempt(self):
-        with patch("tap.tap") as mock_tap:
+        with patch("gestures.tap.tap") as mock_tap:
             tap.tap_with_retry(10, 20)
         mock_tap.assert_called_once_with("initial_session", 10, 20)
 
@@ -113,8 +113,8 @@ class TestTapWithRetry:
                 raise RuntimeError("session stolen")
             # second call succeeds (returns None)
 
-        with patch("tap.tap", side_effect=tap_effect), \
-             patch("tap.get_or_create_session", return_value="new_session") as mock_get, \
+        with patch("gestures.tap.tap", side_effect=tap_effect), \
+             patch("gestures.tap.get_or_create_session", return_value="new_session") as mock_get, \
              patch("time.sleep"):
             tap.tap_with_retry(10, 20)
 
@@ -141,8 +141,8 @@ class TestTapWithRetry:
                 raise RuntimeError("WDA down")
             return "recovered"
 
-        with patch("tap.tap", side_effect=tap_effect), \
-             patch("tap.get_or_create_session", side_effect=sess_effect), \
+        with patch("gestures.tap.tap", side_effect=tap_effect), \
+             patch("gestures.tap.get_or_create_session", side_effect=sess_effect), \
              patch("time.sleep"):
             tap.tap_with_retry(5, 10)
 
@@ -157,7 +157,7 @@ class TestTapWithRetry:
 
     def test_exits_immediately_when_paused_before_tap(self):
         tap._pause_event.set()
-        with patch("tap.tap") as mock_tap:
+        with patch("gestures.tap.tap") as mock_tap:
             tap.tap_with_retry(0, 0)
         mock_tap.assert_not_called()
 
@@ -172,8 +172,8 @@ class TestTapWithRetry:
             tap._pause_event.set()   # pause fires during session reclaim
             return "new_session"
 
-        with patch("tap.tap", side_effect=tap_effect), \
-             patch("tap.get_or_create_session", side_effect=reclaim_effect), \
+        with patch("gestures.tap.tap", side_effect=tap_effect), \
+             patch("gestures.tap.get_or_create_session", side_effect=reclaim_effect), \
              patch("time.sleep"):
             tap.tap_with_retry(0, 0)
 
@@ -188,8 +188,8 @@ class TestTapWithRetry:
             if call_n["n"] <= 10:
                 raise RuntimeError("always fails")
 
-        with patch("tap.tap", side_effect=tap_effect), \
-             patch("tap.get_or_create_session", return_value="s"), \
+        with patch("gestures.tap.tap", side_effect=tap_effect), \
+             patch("gestures.tap.get_or_create_session", return_value="s"), \
              patch("time.sleep"):
             tap.tap_with_retry(0, 0)
 
@@ -275,13 +275,13 @@ class TestPerCycleInterval:
         interval_calls = []
 
         with patch("requests.get") as mock_get, \
-             patch("tap.tap_with_retry"), \
-             patch("tap.get_or_create_session", return_value="sess"), \
+             patch("gestures.tap.tap_with_retry"), \
+             patch("gestures.tap.get_or_create_session", return_value="sess"), \
              patch("termios.tcgetattr", return_value=[]), \
              patch("termios.tcsetattr"), \
              patch("tty.setcbreak"), \
              patch("threading.Thread"), \
-             patch("tap._sleep_interval", side_effect=lambda s: interval_calls.append(s)), \
+             patch("gestures.tap._sleep_interval", side_effect=lambda s: interval_calls.append(s)), \
              patch("sys.argv", ["tap.py", "--coords", "700,400", "335,250", "--count", "2"]):
             mock_get.return_value.json.return_value = {"value": {"ready": True}}
             tap.main()
@@ -293,13 +293,13 @@ class TestPerCycleInterval:
         interval_calls = []
 
         with patch("requests.get") as mock_get, \
-             patch("tap.tap_with_retry"), \
-             patch("tap.get_or_create_session", return_value="sess"), \
+             patch("gestures.tap.tap_with_retry"), \
+             patch("gestures.tap.get_or_create_session", return_value="sess"), \
              patch("termios.tcgetattr", return_value=[]), \
              patch("termios.tcsetattr"), \
              patch("tty.setcbreak"), \
              patch("threading.Thread"), \
-             patch("tap._sleep_interval", side_effect=lambda s: interval_calls.append(s)), \
+             patch("gestures.tap._sleep_interval", side_effect=lambda s: interval_calls.append(s)), \
              patch("sys.argv", ["tap.py", "--coords", "700,400", "--count", "3", "--interval", "0.25"]):
             mock_get.return_value.json.return_value = {"value": {"ready": True}}
             tap.main()
