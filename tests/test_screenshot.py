@@ -81,7 +81,7 @@ class TestCaptureLoop:
 
         def cb(img_bytes):
             cb_calls["n"] += 1
-            if cb_calls["n"] >= 2:
+            if cb_calls["n"] >= 4:
                 raise StopIteration
 
         with patch("screenshot.take_screenshot", return_value=b"img"), \
@@ -91,7 +91,15 @@ class TestCaptureLoop:
             except StopIteration:
                 pass
 
-        assert sleep_calls == [0.5]
+        assert sleep_calls == [0.5, 0.5, 0.5]
+
+    def test_raises_on_zero_interval(self):
+        with pytest.raises(ValueError, match="interval_ms must be positive"):
+            screenshot.capture_loop(0, lambda b: None)
+
+    def test_raises_on_negative_interval(self):
+        with pytest.raises(ValueError, match="interval_ms must be positive"):
+            screenshot.capture_loop(-100, lambda b: None)
 
     def test_calls_callback_multiple_times(self):
         counts = {"n": 0}

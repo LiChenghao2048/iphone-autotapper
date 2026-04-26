@@ -28,8 +28,11 @@ def take_screenshot() -> bytes:
 def capture_loop(interval_ms: int, callback) -> None:
     """Capture screenshots at interval_ms, passing raw PNG bytes to callback.
 
+    Raises ValueError for non-positive interval_ms.
     Runs until interrupted (Ctrl+C) or callback raises an exception.
     """
+    if interval_ms <= 0:
+        raise ValueError(f"interval_ms must be positive, got {interval_ms}")
     interval_s = interval_ms / 1000
     while True:
         img_bytes = take_screenshot()
