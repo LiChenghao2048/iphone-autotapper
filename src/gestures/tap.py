@@ -4,8 +4,8 @@ iPhone Auto-Tapper
 Repeatedly taps one or more screen coordinates on a connected iPhone via WDA HTTP API.
 
 Usage:
-    python3 tap.py --coords "X,Y" ["X,Y" ...]  [--interval SECS] [--count N]
-    python3 tap.py [--x X] [--y Y]             [--interval SECS] [--count N]
+    python3 src/gestures/tap.py --coords "X,Y" ["X,Y" ...]  [--interval SECS] [--count N]
+    python3 src/gestures/tap.py [--x X] [--y Y]             [--interval SECS] [--count N]
 
 Defaults:
     --coords       if omitted, falls back to --x/--y
