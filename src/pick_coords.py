@@ -23,27 +23,11 @@ from urllib.parse import urlparse, parse_qs
 import requests
 from PIL import Image
 
-WDA_URL = "http://127.0.0.1:8100"
+from _session import WDA_URL
+from screenshot import take_screenshot
+
 SCALE   = 3    # iPhone 14 Pro Max: 3× screen (pixels ÷ 3 = logical points)
 PORT    = 9877
-
-
-# ── WDA helpers ───────────────────────────────────────────────────────────────
-
-def get_session() -> str:
-    payload = {"capabilities": {"alwaysMatch": {}}, "desiredCapabilities": {}}
-    r = requests.post(f"{WDA_URL}/session", json=payload, timeout=10)
-    data = r.json()
-    sid = data.get("sessionId") or data.get("value", {}).get("sessionId")
-    if not sid:
-        raise RuntimeError(f"Could not create WDA session: {data}")
-    return sid
-
-
-def take_screenshot() -> bytes:
-    sid = get_session()
-    r = requests.get(f"{WDA_URL}/session/{sid}/screenshot", timeout=10)
-    return base64.b64decode(r.json()["value"])
 
 
 def screenshot_to_b64(img_bytes: bytes) -> tuple[str, int, int]:

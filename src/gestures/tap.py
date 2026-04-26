@@ -25,25 +25,16 @@ import termios
 import threading
 import time
 import tty
+from pathlib import Path
 import requests
 
-# ── Config ───────────────────────────────────────────────────────────────────
-WDA_URL = "http://127.0.0.1:8100"   # WDA forwarded via iproxy
-# ────────────────────────────────────────────────────────────────────────────
+_src = str(Path(__file__).resolve().parent.parent)
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+from _session import WDA_URL, get_or_create_session  # noqa: E402
 
 _session_id: str = ""
 _pause_event = threading.Event()   # set = paused, clear = running
-
-
-def get_or_create_session() -> str:
-    """Create a new WDA session (works on whatever app is on screen)."""
-    payload = {"capabilities": {"alwaysMatch": {}}, "desiredCapabilities": {}}
-    r = requests.post(f"{WDA_URL}/session", json=payload, timeout=10)
-    data = r.json()
-    sid = data.get("sessionId") or data.get("value", {}).get("sessionId")
-    if not sid:
-        raise RuntimeError(f"Could not create WDA session: {data}")
-    return sid
 
 
 def tap(session_id: str, x: int, y: int) -> None:
