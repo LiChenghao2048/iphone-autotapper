@@ -64,7 +64,7 @@ def _swipe_or_exit(session_id: str, x1: int, y1: int, x2: int, y2: int, duration
     """Call swipe(), printing errors and exiting on failure."""
     try:
         swipe(session_id, x1, y1, x2, y2, duration_ms)
-    except (RuntimeError, requests.RequestException) as e:
+    except (ValueError, RuntimeError, requests.RequestException) as e:
         print(f"ERROR: swipe failed: {e}", file=sys.stderr)
         sys.exit(1)
 

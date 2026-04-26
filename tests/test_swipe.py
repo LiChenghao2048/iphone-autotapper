@@ -224,6 +224,16 @@ class TestMain:
                 swipe.main()
         assert exc_info.value.code != 0
 
+    def test_exits_when_duration_is_zero(self):
+        status_resp = MagicMock()
+        status_resp.json.return_value = {"value": {"ready": True}}
+        with patch("requests.get", return_value=status_resp), \
+             patch("gestures.swipe.get_or_create_session", return_value="sess1"), \
+             patch("sys.argv", ["swipe.py", "--x1", "0", "--y1", "0", "--x2", "100", "--y2", "100", "--duration", "0"]):
+            with pytest.raises(SystemExit) as exc_info:
+                swipe.main()
+        assert exc_info.value.code != 0
+
     def test_exits_when_swipe_raises_connection_error(self):
         status_resp = MagicMock()
         status_resp.json.return_value = {"value": {"ready": True}}
