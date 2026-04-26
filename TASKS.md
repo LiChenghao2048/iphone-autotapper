@@ -13,6 +13,7 @@ Automate playing Brawl Stars on a physical iPhone using WebDriverAgent (WDA) for
 ### Phase 1 — Gesture layer
 - [x] **Task 1** · `src/gestures/tap.py` — tap primitive with session retry, pause/resume, multi-coord CLI
 - [x] **Task 2** · `src/gestures/swipe.py` — swipe primitive (A→B, configurable duration); refactor tap into `src/gestures/` subdirectory
+- [ ] **Deferred (add before 3rd gesture file)** · extract shared `get_or_create_session()` and `WDA_URL` into `src/gestures/_session.py`; both `tap.py` and `swipe.py` currently carry identical copies
 
 ### Phase 2 — Screenshot loop
 - [ ] **Task 3** · `src/screenshot.py` — extract `take_screenshot()` from `pick_coords.py`; add `capture_loop(interval_ms, callback)` for headless use; CLI `--save screen.png`
