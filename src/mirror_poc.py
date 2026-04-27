@@ -95,8 +95,11 @@ def map_point(
 
     tx, ty: logical iPhone points (pixels ÷ SCALE), origin at top-left.
     Returns screen points suitable for CGEventCreateMouseEvent / CGEventPostToPid.
+    Raises ValueError if phone_pts contains a non-positive dimension.
     """
     phone_w, phone_h = phone_pts
+    if phone_w <= 0 or phone_h <= 0:
+        raise ValueError(f"phone_pts must be positive, got {phone_pts}")
     content_w = bounds["Width"]
     content_h = bounds["Height"] - title_bar_h
 
@@ -116,17 +119,14 @@ def map_point(
 
 # ── Background tap ────────────────────────────────────────────────────────────
 
-def background_tap(tx: int, ty: int) -> None:
-    """Inject a mouse click at iPhone logical point (tx, ty) via CGEventPostToPid.
+def _send_tap(pid: int, bounds: dict, tx: int, ty: int) -> None:
+    """Post kCGEventLeftMouseDown/Up to pid at the screen position for (tx, ty).
 
-    iPhone Mirroring does not need to be the frontmost window.
-    The key open question for this POC is whether iPhone actually registers
-    the tap when the window is in the background — see README.
+    Separated from _find_mirror_window so callers that already hold the window
+    info (e.g. main()) can reuse it without a redundant lookup.
     """
-    pid, _, bounds = _find_mirror_window()
     sx, sy = map_point(tx, ty, bounds)
     pt = Quartz.CGPointMake(sx, sy)
-
     down = Quartz.CGEventCreateMouseEvent(
         None, Quartz.kCGEventLeftMouseDown, pt, Quartz.kCGMouseButtonLeft
     )
@@ -136,6 +136,17 @@ def background_tap(tx: int, ty: int) -> None:
     Quartz.CGEventPostToPid(pid, down)
     time.sleep(0.05)   # 50 ms hold, matching WDA tap duration
     Quartz.CGEventPostToPid(pid, up)
+
+
+def background_tap(tx: int, ty: int) -> None:
+    """Inject a mouse click at iPhone logical point (tx, ty) via CGEventPostToPid.
+
+    iPhone Mirroring does not need to be the frontmost window.
+    The key open question for this POC is whether iPhone actually registers
+    the tap when the window is in the background — see README.
+    """
+    pid, _, bounds = _find_mirror_window()
+    _send_tap(pid, bounds, tx, ty)
 
 
 # ── Frame capture ─────────────────────────────────────────────────────────────
@@ -217,7 +228,7 @@ def main():
             sys.exit(1)
         sx, sy = map_point(tx, ty, bounds)
         print(f"Tapping iPhone ({tx}, {ty}) → screen ({sx:.1f}, {sy:.1f}) ...")
-        background_tap(tx, ty)
+        _send_tap(pid, bounds, tx, ty)
         print("Done. Check if the iPhone registered the tap.")
 
     if args.screenshot:

@@ -166,6 +166,73 @@ class TestMapPoint:
         assert sx == pytest.approx(100.0)
         assert sy == pytest.approx(28.0 + 100.0)
 
+    def test_vertical_letterboxing_centres_phone_vertically(self):
+        # Window taller than phone → vertical bars (offset_y > 0)
+        #   Window: 430 × 1200 (28 title + 1172 content)
+        #   scale = min(430/430, 1172/932) = min(1.0, 1.257) = 1.0
+        #   display: 430 × 932 → offset_y = (1172 - 932) / 2 = 120
+        b = self._bounds(x=0.0, y=0.0, w=430.0, h=1200.0)
+        sx, sy = mirror_poc.map_point(0, 0, b, self.PHONE, self.TBH)
+        assert sx == pytest.approx(0.0)
+        assert sy == pytest.approx(28.0 + 120.0)
+
+    def test_raises_on_zero_phone_width(self):
+        b = self._bounds()
+        with pytest.raises(ValueError, match="phone_pts must be positive"):
+            mirror_poc.map_point(0, 0, b, phone_pts=(0, 932))
+
+    def test_raises_on_zero_phone_height(self):
+        b = self._bounds()
+        with pytest.raises(ValueError, match="phone_pts must be positive"):
+            mirror_poc.map_point(0, 0, b, phone_pts=(430, 0))
+
+    def test_raises_on_negative_phone_dimension(self):
+        b = self._bounds()
+        with pytest.raises(ValueError, match="phone_pts must be positive"):
+            mirror_poc.map_point(0, 0, b, phone_pts=(-1, 932))
+
+
+# ── _send_tap ────────────────────────────────────────────────────────────────
+
+class TestSendTap:
+    """_send_tap is the workhorse; background_tap and main() both delegate to it."""
+
+    BOUNDS = {"X": 100.0, "Y": 50.0, "Width": 430.0, "Height": 960.0}
+
+    def test_posts_down_then_sleep_then_up(self):
+        call_log = []
+        mock_down = MagicMock(name="down")
+        mock_up   = MagicMock(name="up")
+
+        with patch("Quartz.CGPointMake"), \
+             patch("Quartz.CGEventCreateMouseEvent", side_effect=[mock_down, mock_up]), \
+             patch("Quartz.CGEventPostToPid", side_effect=lambda pid, ev: call_log.append(("post", ev))), \
+             patch("time.sleep", side_effect=lambda s: call_log.append(("sleep", s))):
+            mirror_poc._send_tap(9999, self.BOUNDS, 50, 100)
+
+        assert call_log == [("post", mock_down), ("sleep", pytest.approx(0.05)), ("post", mock_up)]
+
+    def test_uses_correct_event_types(self):
+        with patch("Quartz.CGPointMake"), \
+             patch("Quartz.CGEventCreateMouseEvent", return_value=MagicMock()) as mock_create, \
+             patch("Quartz.CGEventPostToPid"), \
+             patch("time.sleep"):
+            mirror_poc._send_tap(1, self.BOUNDS, 0, 0)
+
+        import Quartz as Q
+        assert mock_create.call_args_list[0][0][1] == Q.kCGEventLeftMouseDown
+        assert mock_create.call_args_list[1][0][1] == Q.kCGEventLeftMouseUp
+
+    def test_posts_to_supplied_pid(self):
+        posts = []
+        with patch("Quartz.CGPointMake"), \
+             patch("Quartz.CGEventCreateMouseEvent", return_value=MagicMock()), \
+             patch("Quartz.CGEventPostToPid", side_effect=lambda pid, ev: posts.append(pid)), \
+             patch("time.sleep"):
+            mirror_poc._send_tap(7777, self.BOUNDS, 0, 0)
+
+        assert posts == [7777, 7777]
+
 
 # ── background_tap ────────────────────────────────────────────────────────────
 
@@ -202,44 +269,44 @@ class TestBackgroundTap:
 
     def test_calls_find_window_exactly_once(self):
         with self._patch_find() as mock_find, \
-             patch("Quartz.CGPointMake"), \
-             patch("Quartz.CGEventCreateMouseEvent", return_value=MagicMock()), \
-             patch("Quartz.CGEventPostToPid"), \
-             patch("time.sleep"):
+             patch("mirror_poc._send_tap"):
             mirror_poc.background_tap(0, 0)
         mock_find.assert_called_once()
 
     def test_sleeps_between_down_and_up(self):
-        sleep_calls = []
+        call_log = []
+
+        def log_post(pid, event):
+            call_log.append(("post", event))
+
+        def log_sleep(s):
+            call_log.append(("sleep", s))
+
+        mock_down = MagicMock(name="down")
+        mock_up   = MagicMock(name="up")
 
         with self._patch_find(), \
              patch("Quartz.CGPointMake"), \
-             patch("Quartz.CGEventCreateMouseEvent", return_value=MagicMock()), \
-             patch("Quartz.CGEventPostToPid") as mock_post, \
-             patch("time.sleep", side_effect=sleep_calls.append):
+             patch("Quartz.CGEventCreateMouseEvent", side_effect=[mock_down, mock_up]), \
+             patch("Quartz.CGEventPostToPid", side_effect=log_post), \
+             patch("time.sleep", side_effect=log_sleep):
 
             mirror_poc.background_tap(0, 0)
 
-        # Sleep must occur between the two posts
-        assert len(sleep_calls) == 1
-        assert sleep_calls[0] == pytest.approx(0.05)
-        # down posted before sleep, up posted after
-        post_order = [c[0][1] for c in mock_post.call_args_list]
-        assert len(post_order) == 2
+        # Exact ordering: post-down, sleep(0.05), post-up
+        assert len(call_log) == 3
+        assert call_log[0] == ("post", mock_down)
+        assert call_log[1] == ("sleep", pytest.approx(0.05))
+        assert call_log[2] == ("post", mock_up)
 
-    def test_map_point_called_with_correct_logical_coords(self):
-        with self._patch_find() as _, \
-             patch("mirror_poc.map_point", return_value=(200.0, 300.0)) as mock_map, \
-             patch("Quartz.CGPointMake"), \
-             patch("Quartz.CGEventCreateMouseEvent", return_value=MagicMock()), \
-             patch("Quartz.CGEventPostToPid"), \
-             patch("time.sleep"):
+    def test_delegates_to_send_tap_with_correct_args(self):
+        pid, wid = 9999, 42
+        bounds = {"X": 100.0, "Y": 50.0, "Width": 430.0, "Height": 960.0}
+        with patch("mirror_poc._find_mirror_window", return_value=(pid, wid, bounds)), \
+             patch("mirror_poc._send_tap") as mock_send:
             mirror_poc.background_tap(123, 456)
 
-        mock_map.assert_called_once()
-        call_args = mock_map.call_args[0]
-        assert call_args[0] == 123
-        assert call_args[1] == 456
+        mock_send.assert_called_once_with(pid, bounds, 123, 456)
 
     def test_propagates_find_window_error(self):
         with patch("mirror_poc._find_mirror_window",
@@ -347,12 +414,12 @@ class TestMain:
         assert "PID=1234" in out
         assert "WindowID=42" in out
 
-    def test_tap_flag_calls_background_tap(self):
+    def test_tap_flag_calls_send_tap_with_parsed_coords(self):
         with self._patch_find(), \
-             patch("mirror_poc.background_tap") as mock_tap, \
+             patch("mirror_poc._send_tap") as mock_send, \
              patch("sys.argv", ["mirror_poc.py", "--tap", "215,466"]):
             mirror_poc.main()
-        mock_tap.assert_called_once_with(215, 466)
+        mock_send.assert_called_once_with(1234, self.BOUNDS, 215, 466)
 
     def test_tap_flag_with_bad_format_exits_nonzero(self):
         with self._patch_find(), \
@@ -405,12 +472,12 @@ class TestMain:
     def test_tap_and_screenshot_together(self, tmp_path):
         out_file = tmp_path / "frame.png"
         with self._patch_find(), \
-             patch("mirror_poc.background_tap") as mock_tap, \
+             patch("mirror_poc._send_tap") as mock_send, \
              patch("mirror_poc.capture_frame", return_value=b"img"), \
              patch("sys.argv", [
                  "mirror_poc.py", "--tap", "100,200",
                  "--screenshot", str(out_file),
              ]):
             mirror_poc.main()
-        mock_tap.assert_called_once_with(100, 200)
+        mock_send.assert_called_once_with(1234, self.BOUNDS, 100, 200)
         assert out_file.exists()
