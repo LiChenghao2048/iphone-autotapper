@@ -32,3 +32,15 @@ Automate playing Brawl Stars on a physical iPhone using WebDriverAgent (WDA) for
 ### Phase 6 — Enemy targeting
 - [ ] **Task 9** · enemy health bar color detection → compute direction from player centre → swipe toward nearest detected enemy
 
+---
+
+## Dev Tooling
+
+### Coordinate Picker (`src/pick_coords.py`)
+- [x] Initial picker — screenshot over HTTP, hover to preview logical-point coordinates, click to log `tap.py` command
+- [x] Refactor — extract `take_screenshot()` into `src/screenshot.py`; import `WDA_URL` / `get_or_create_session()` from `src/_session.py`
+- [x] Space-to-tap — press Space while hovering to fire a real WDA tap at the crosshair position; auto-refreshes screenshot on success; errors shown in log
+- [x] Split X/Y inputs + Go — separate X and Y boxes replace the single `x,y` field; clicking the image fills both; Enter in either box submits
+- [x] Copy button — copies `--x {tx} --y {ty}` to clipboard from the current crosshair position
+- [x] Sidebar layout — image on the left, 320 px sidebar on the right (controls at top, scrollable click log below)
+
