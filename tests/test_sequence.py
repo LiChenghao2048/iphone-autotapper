@@ -133,6 +133,10 @@ class TestParseValue:
         with pytest.raises(ValueError, match="exactly 2 elements"):
             _parse_value([1, 2, 3])
 
+    def test_raises_on_inverted_range(self):
+        with pytest.raises(ValueError, match="lo must be <= hi"):
+            _parse_value([200, 100])
+
 
 class TestResolve:
 
@@ -207,9 +211,10 @@ class TestRunSequence:
     def test_range_tap_resolves_per_cycle(self):
         tap_calls = []
         with patch("sequence.tap", side_effect=lambda s, x, y: tap_calls.append((x, y))), \
-             patch("sequence.random.randint", side_effect=[10, 20, 30, 40]):
+             patch("sequence.random.randint", side_effect=[10, 20, 30, 40]) as mock_ri:
             run_sequence([Tap(x=(1, 5), y=(6, 9))], "sess", count=2)
         assert tap_calls == [(10, 20), (30, 40)]
+        assert mock_ri.call_count == 4
 
     def test_raises_on_empty_steps(self):
         with pytest.raises(ValueError, match="steps must not be empty"):

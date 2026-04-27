@@ -76,7 +76,10 @@ def _parse_value(v) -> RangeOrInt:
     if isinstance(v, list):
         if len(v) != 2:
             raise ValueError(f"Range must have exactly 2 elements, got {v}")
-        return (int(v[0]), int(v[1]))
+        lo, hi = int(v[0]), int(v[1])
+        if lo > hi:
+            raise ValueError(f"Range lo must be <= hi, got [{lo}, {hi}]")
+        return (lo, hi)
     return int(v)
 
 
