@@ -56,11 +56,11 @@ html_template = """<!DOCTYPE html>
   }}
   /* ── left panel: image ── */
   #left {{
-    flex: 1; overflow: auto; padding: 16px;
+    flex: 1; min-width: 0; overflow: auto; padding: 16px;
     display: flex; align-items: flex-start; justify-content: center;
   }}
-  #wrap {{ position: relative; display: inline-block; cursor: crosshair; }}
-  #wrap img {{ display: block; max-height: calc(100vh - 32px); width: auto; }}
+  #wrap {{ position: relative; display: inline-block; cursor: crosshair; max-width: 100%; }}
+  #wrap img {{ display: block; max-width: 100%; max-height: calc(100vh - 32px); width: auto; height: auto; }}
   #crossH, #crossV {{
     position: absolute; pointer-events: none;
     background: rgba(255, 80, 80, 0.7);
