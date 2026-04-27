@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
 import sequence
-from sequence import Tap, Swipe, Wait, load_preset, run_sequence, _interruptible_sleep, _keyboard_listener
+from sequence import Tap, Swipe, Wait, load_preset, run_sequence, _interruptible_sleep, _keyboard_listener, _parse_value, _resolve
 
 
 # ── load_preset ───────────────────────────────────────────────────────────────
@@ -80,11 +80,101 @@ class TestLoadPreset:
             with pytest.raises(ValueError, match="must be a YAML list"):
                 load_preset("p")
 
+    def test_loads_tap_with_range_x(self, tmp_path):
+        d = self._write_preset(tmp_path, "p", "- type: tap\n  x: [680, 720]\n  y: 400\n")
+        with patch.object(sequence, "PRESETS_DIR", d):
+            steps = load_preset("p")
+        assert steps == [Tap(x=(680, 720), y=400)]
+
+    def test_loads_swipe_with_range_duration(self, tmp_path):
+        yaml = "- type: swipe\n  x1: 10\n  y1: 20\n  x2: 30\n  y2: 40\n  duration_ms: [250, 400]\n"
+        d = self._write_preset(tmp_path, "p", yaml)
+        with patch.object(sequence, "PRESETS_DIR", d):
+            steps = load_preset("p")
+        assert steps[0].duration_ms == (250, 400)
+
+    def test_loads_wait_with_range_ms(self, tmp_path):
+        d = self._write_preset(tmp_path, "p", "- type: wait\n  ms: [500, 1500]\n")
+        with patch.object(sequence, "PRESETS_DIR", d):
+            steps = load_preset("p")
+        assert steps == [Wait(ms=(500, 1500))]
+
+    def test_raises_on_range_with_wrong_element_count(self, tmp_path):
+        d = self._write_preset(tmp_path, "p", "- type: tap\n  x: [1, 2, 3]\n  y: 0\n")
+        with patch.object(sequence, "PRESETS_DIR", d):
+            with pytest.raises(ValueError, match="exactly 2 elements"):
+                load_preset("p")
+
     def test_brawl_stars_preset_is_valid(self):
         steps = load_preset("brawl_stars")
         assert len(steps) > 0
         types = {type(s) for s in steps}
         assert types <= {Tap, Swipe, Wait}
+
+
+# ── _parse_value / _resolve ───────────────────────────────────────────────────
+
+class TestParseValue:
+
+    def test_scalar_int(self):
+        assert _parse_value(400) == 400
+
+    def test_scalar_string_int(self):
+        assert _parse_value("400") == 400
+
+    def test_two_element_list(self):
+        assert _parse_value([100, 200]) == (100, 200)
+
+    def test_raises_on_one_element_list(self):
+        with pytest.raises(ValueError, match="exactly 2 elements"):
+            _parse_value([100])
+
+    def test_raises_on_three_element_list(self):
+        with pytest.raises(ValueError, match="exactly 2 elements"):
+            _parse_value([1, 2, 3])
+
+    def test_raises_on_inverted_range(self):
+        with pytest.raises(ValueError, match="lo must be <= hi"):
+            _parse_value([200, 100])
+
+    def test_raises_on_negative_scalar(self):
+        with pytest.raises(ValueError, match=">= 0"):
+            _parse_value(-1)
+
+    def test_raises_on_negative_range_lo(self):
+        with pytest.raises(ValueError, match=">= 0"):
+            _parse_value([-10, 200])
+
+    def test_raises_on_negative_range_hi(self):
+        with pytest.raises(ValueError, match=">= 0"):
+            _parse_value([0, -1])
+
+    def test_raises_on_float_scalar(self):
+        with pytest.raises(ValueError, match="float"):
+            _parse_value(3.7)
+
+    def test_raises_on_float_in_range(self):
+        with pytest.raises(ValueError, match="integers"):
+            _parse_value([100.5, 200])
+
+
+class TestResolve:
+
+    def test_scalar_passthrough(self):
+        assert _resolve(42) == 42
+
+    def test_range_samples_within_bounds(self):
+        results = {_resolve((100, 200)) for _ in range(200)}
+        assert all(100 <= v <= 200 for v in results)
+
+    def test_range_lo_equals_hi(self):
+        assert _resolve((7, 7)) == 7
+
+    def test_range_uses_random_randint(self):
+        with patch("sequence.random.randint", return_value=150) as mock_ri:
+            result = _resolve((100, 200))
+        mock_ri.assert_called_once_with(100, 200)
+        assert result == 150
 
 
 # ── run_sequence ──────────────────────────────────────────────────────────────
@@ -137,6 +227,14 @@ class TestRunSequence:
                 run_sequence([Tap(1, 2)], "sess", count=0)
 
         assert tap_calls["n"] == 5
+
+    def test_range_tap_resolves_per_cycle(self):
+        tap_calls = []
+        with patch("sequence.tap", side_effect=lambda s, x, y: tap_calls.append((x, y))), \
+             patch("sequence.random.randint", side_effect=[10, 20, 30, 40]) as mock_ri:
+            run_sequence([Tap(x=(1, 5), y=(6, 9))], "sess", count=2)
+        assert tap_calls == [(10, 20), (30, 40)]
+        assert mock_ri.call_count == 4
 
     def test_raises_on_empty_steps(self):
         with pytest.raises(ValueError, match="steps must not be empty"):
