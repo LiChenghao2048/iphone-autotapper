@@ -137,6 +137,26 @@ class TestParseValue:
         with pytest.raises(ValueError, match="lo must be <= hi"):
             _parse_value([200, 100])
 
+    def test_raises_on_negative_scalar(self):
+        with pytest.raises(ValueError, match=">= 0"):
+            _parse_value(-1)
+
+    def test_raises_on_negative_range_lo(self):
+        with pytest.raises(ValueError, match=">= 0"):
+            _parse_value([-10, 200])
+
+    def test_raises_on_negative_range_hi(self):
+        with pytest.raises(ValueError, match=">= 0"):
+            _parse_value([0, -1])
+
+    def test_raises_on_float_scalar(self):
+        with pytest.raises(ValueError, match="float"):
+            _parse_value(3.7)
+
+    def test_raises_on_float_in_range(self):
+        with pytest.raises(ValueError, match="integers"):
+            _parse_value([100.5, 200])
+
 
 class TestResolve:
 

@@ -72,15 +72,28 @@ class Wait:
 
 
 def _parse_value(v) -> RangeOrInt:
-    """Return int for a scalar or tuple[lo, hi] for a two-element list."""
+    """Return int for a scalar or tuple[lo, hi] for a two-element list.
+
+    Raises ValueError for floats, negative values, or malformed ranges.
+    """
     if isinstance(v, list):
         if len(v) != 2:
             raise ValueError(f"Range must have exactly 2 elements, got {v}")
+        for elem in v:
+            if isinstance(elem, float):
+                raise ValueError(f"Range elements must be integers, got {v!r}")
         lo, hi = int(v[0]), int(v[1])
+        if lo < 0 or hi < 0:
+            raise ValueError(f"Range values must be >= 0, got [{lo}, {hi}]")
         if lo > hi:
             raise ValueError(f"Range lo must be <= hi, got [{lo}, {hi}]")
         return (lo, hi)
-    return int(v)
+    if isinstance(v, float):
+        raise ValueError(f"Expected an integer, got float {v!r}")
+    result = int(v)
+    if result < 0:
+        raise ValueError(f"Value must be >= 0, got {result}")
+    return result
 
 
 def _resolve(v: RangeOrInt) -> int:
