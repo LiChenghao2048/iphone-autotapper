@@ -12,12 +12,16 @@ Each entry must have a "type" field: tap | swipe | wait.
     swipe: x1, y1, x2, y2, duration_ms (default 500)
     wait:  ms
 
+Any numeric field may be a scalar (e.g. 400) or a two-element range (e.g. [380, 420]).
+Ranges are re-sampled on every execution, so each cycle uses a fresh random value.
+
 Controls:
     Space / p    pause / resume
     Ctrl+C       quit
 """
 
 import argparse
+import random
 import sys
 import termios
 import threading
@@ -44,24 +48,43 @@ PRESETS_DIR = Path(__file__).resolve().parent / "presets"
 _pause_event = threading.Event()
 
 
+RangeOrInt = Union[int, tuple[int, int]]
+
+
 @dataclass
 class Tap:
-    x: int
-    y: int
+    x: RangeOrInt
+    y: RangeOrInt
 
 
 @dataclass
 class Swipe:
-    x1: int
-    y1: int
-    x2: int
-    y2: int
-    duration_ms: int = 500
+    x1: RangeOrInt
+    y1: RangeOrInt
+    x2: RangeOrInt
+    y2: RangeOrInt
+    duration_ms: RangeOrInt = 500
 
 
 @dataclass
 class Wait:
-    ms: int
+    ms: RangeOrInt
+
+
+def _parse_value(v) -> RangeOrInt:
+    """Return int for a scalar or tuple[lo, hi] for a two-element list."""
+    if isinstance(v, list):
+        if len(v) != 2:
+            raise ValueError(f"Range must have exactly 2 elements, got {v}")
+        return (int(v[0]), int(v[1]))
+    return int(v)
+
+
+def _resolve(v: RangeOrInt) -> int:
+    """Sample a random int from a (lo, hi) range, or return the scalar unchanged."""
+    if isinstance(v, tuple):
+        return random.randint(v[0], v[1])
+    return v
 
 
 Step = Union[Tap, Swipe, Wait]
@@ -80,15 +103,15 @@ def load_preset(name: str) -> list[Step]:
     for i, entry in enumerate(raw):
         kind = entry.get("type")
         if kind == "tap":
-            steps.append(Tap(x=int(entry["x"]), y=int(entry["y"])))
+            steps.append(Tap(x=_parse_value(entry["x"]), y=_parse_value(entry["y"])))
         elif kind == "swipe":
             steps.append(Swipe(
-                x1=int(entry["x1"]), y1=int(entry["y1"]),
-                x2=int(entry["x2"]), y2=int(entry["y2"]),
-                duration_ms=int(entry.get("duration_ms", 500)),
+                x1=_parse_value(entry["x1"]), y1=_parse_value(entry["y1"]),
+                x2=_parse_value(entry["x2"]), y2=_parse_value(entry["y2"]),
+                duration_ms=_parse_value(entry.get("duration_ms", 500)),
             ))
         elif kind == "wait":
-            steps.append(Wait(ms=int(entry["ms"])))
+            steps.append(Wait(ms=_parse_value(entry["ms"])))
         else:
             raise ValueError(f"Step {i}: unknown type '{kind}' (expected tap, swipe, wait)")
     return steps
@@ -109,11 +132,12 @@ def run_sequence(steps: list[Step], session_id: str, count: int = 0) -> None:
             while _pause_event.is_set():
                 time.sleep(0.05)
             if isinstance(step, Tap):
-                tap(session_id, step.x, step.y)
+                tap(session_id, _resolve(step.x), _resolve(step.y))
             elif isinstance(step, Swipe):
-                swipe(session_id, step.x1, step.y1, step.x2, step.y2, step.duration_ms)
+                swipe(session_id, _resolve(step.x1), _resolve(step.y1),
+                      _resolve(step.x2), _resolve(step.y2), _resolve(step.duration_ms))
             elif isinstance(step, Wait):
-                _interruptible_sleep(step.ms / 1000)
+                _interruptible_sleep(_resolve(step.ms) / 1000)
         cycle += 1
 
 
