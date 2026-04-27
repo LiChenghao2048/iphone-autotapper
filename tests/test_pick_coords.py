@@ -99,6 +99,11 @@ class TestBuildHtml:
         assert "(maxTx - 1)" in html
         assert "(maxTy - 1)" in html
 
+    def test_non_integer_input_error_message(self):
+        state = {"b64": "x", "px_w": 9, "px_h": 18}
+        html = pick_coords.build_html(state)
+        assert "Enter integers in both fields" in html
+
 
 # ── Handler (via make_handler + real loopback server) ─────────────────────────
 

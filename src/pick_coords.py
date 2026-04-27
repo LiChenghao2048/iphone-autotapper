@@ -60,7 +60,7 @@ html_template = """<!DOCTYPE html>
     display: flex; align-items: flex-start; justify-content: center;
   }}
   #wrap {{ position: relative; display: inline-block; cursor: crosshair; }}
-  #wrap img {{ display: block; max-height: 100vh; width: auto; }}
+  #wrap img {{ display: block; max-height: calc(100vh - 32px); width: auto; }}
   #crossH, #crossV {{
     position: absolute; pointer-events: none;
     background: rgba(255, 80, 80, 0.7);
