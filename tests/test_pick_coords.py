@@ -83,6 +83,27 @@ class TestBuildHtml:
         state_b = {"b64": "BBB", "px_w": 9, "px_h": 18}
         assert pick_coords.build_html(state_a) != pick_coords.build_html(state_b)
 
+    def test_bounds_check_uses_exclusive_upper_bound(self):
+        # Locks the >= operator so an off-by-one regression is caught at the
+        # template level without requiring a browser.
+        state = {"b64": "x", "px_w": 9, "px_h": 18}
+        html = pick_coords.build_html(state)
+        assert "tx >= maxTx" in html
+        assert "ty >= maxTy" in html
+
+    def test_out_of_range_error_message_shows_max_minus_one(self):
+        # The valid upper bound is maxTx-1, so the error message must display
+        # (maxTx - 1) and (maxTy - 1), not maxTx/maxTy.
+        state = {"b64": "x", "px_w": 9, "px_h": 18}
+        html = pick_coords.build_html(state)
+        assert "(maxTx - 1)" in html
+        assert "(maxTy - 1)" in html
+
+    def test_non_integer_input_error_message(self):
+        state = {"b64": "x", "px_w": 9, "px_h": 18}
+        html = pick_coords.build_html(state)
+        assert "Enter integers in both fields" in html
+
 
 # ── Handler (via make_handler + real loopback server) ─────────────────────────
 
@@ -238,3 +259,61 @@ class TestHandler:
         finally:
             server.shutdown()
             t.join(timeout=2)
+
+
+# ── /tap route ────────────────────────────────────────────────────────────────
+
+class TestTapEndpoint:
+
+    def test_tap_returns_ok_true_and_calls_tap(self, handler_server):
+        port, _, _ = handler_server
+        with patch("pick_coords.get_or_create_session", return_value="fake-sid"), \
+             patch("pick_coords.tap") as mock_tap:
+            status, ctype, body = _http_get(port, "/tap?tx=100&ty=200")
+        assert status == 200
+        assert "application/json" in ctype
+        data = json.loads(body)
+        assert data == {"ok": True}
+        mock_tap.assert_called_once_with("fake-sid", 100, 200)
+
+    def test_tap_returns_ok_false_on_session_error(self, handler_server):
+        port, _, _ = handler_server
+        with patch("pick_coords.get_or_create_session", side_effect=RuntimeError("WDA down")):
+            status, ctype, body = _http_get(port, "/tap?tx=50&ty=60")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "WDA down" in data["error"]
+
+    def test_tap_returns_ok_false_on_tap_error(self, handler_server):
+        port, _, _ = handler_server
+        with patch("pick_coords.get_or_create_session", return_value="sid"), \
+             patch("pick_coords.tap", side_effect=RuntimeError("session stolen")):
+            status, ctype, body = _http_get(port, "/tap?tx=10&ty=20")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "session stolen" in data["error"]
+
+    def test_tap_missing_params_returns_ok_false(self, handler_server):
+        port, _, _ = handler_server
+        status, ctype, body = _http_get(port, "/tap")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "error" in data
+
+    def test_tap_non_integer_params_returns_ok_false(self, handler_server):
+        port, _, _ = handler_server
+        status, ctype, body = _http_get(port, "/tap?tx=foo&ty=bar")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
+        assert "error" in data
+
+    def test_tap_partial_params_returns_ok_false(self, handler_server):
+        port, _, _ = handler_server
+        status, ctype, body = _http_get(port, "/tap?tx=100")
+        assert status == 200
+        data = json.loads(body)
+        assert data["ok"] is False
