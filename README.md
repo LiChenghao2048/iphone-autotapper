@@ -103,7 +103,19 @@ python3 src/gestures/swipe.py --x1 100 --y1 400 --x2 300 --y2 400
 python3 src/gestures/swipe.py --x1 100 --y1 400 --x2 300 --y2 400 --duration 1000
 ```
 
-`Ctrl+C` to stop tap.py.
+**Terminal 2 — sequence runner:**
+```bash
+# Run the brawl_stars preset once
+python3 src/sequence.py --preset brawl_stars --count 1
+
+# Loop forever (default)
+python3 src/sequence.py --preset brawl_stars
+
+# Run exactly 10 cycles
+python3 src/sequence.py --preset brawl_stars --count 10
+```
+
+`Ctrl+C` to stop any script.
 
 ---
 
@@ -137,6 +149,57 @@ While `tap.py` is running in the terminal:
 | `--x2` | required | End X coordinate (points) |
 | `--y2` | required | End Y coordinate (points) |
 | `--duration` | 500 | Swipe motion duration in milliseconds |
+
+## Options — sequence.py
+
+| Flag | Default | Description |
+|---|---|---|
+| `--preset` | required | Preset name — loads `src/presets/<name>.yaml` |
+| `--count` | 0 | Cycles to perform — 0 = loop forever |
+
+Controls while running: `Space` or `p` to pause/resume, `Ctrl+C` to stop.
+
+---
+
+## Preset format
+
+Preset files live in `src/presets/<name>.yaml`. Each entry has a `type` field: `tap`, `swipe`, or `wait`.
+
+```yaml
+- type: tap
+  x: 860
+  y: 400
+
+- type: swipe
+  x1: 250
+  y1: 350
+  x2: 400
+  y2: 200
+  duration_ms: 500   # optional, default 500
+
+- type: wait
+  ms: 1000
+```
+
+**Random ranges:** any numeric field can be a two-element list `[lo, hi]`. A fresh `random.randint(lo, hi)` is drawn on every cycle — values are re-sampled each time through the sequence, not just at load.
+
+```yaml
+- type: tap
+  x: [680, 720]   # picks a random X between 680 and 720 each cycle
+  y: 400
+
+- type: swipe
+  x1: 250
+  y1: 350
+  x2: [200, 400]
+  y2: [200, 400]
+  duration_ms: [500, 2000]
+
+- type: wait
+  ms: [500, 1500]
+```
+
+Constraints enforced at load time: range must have exactly 2 integers with `lo ≤ hi`, all values must be ≥ 0, floats are rejected.
 
 ---
 
@@ -183,6 +246,7 @@ pytest
 ## Stack
 
 ```
+src/sequence.py       ──calls──▶ tap / swipe
 src/gestures/tap.py   ──HTTP──▶ WDA (port 8100)
 src/gestures/swipe.py ──HTTP──▶ WDA (port 8100)
                                 │
@@ -192,7 +256,10 @@ src/gestures/swipe.py ──HTTP──▶ WDA (port 8100)
 ```
 
 - `scripts/start_wda.py` — launches `xcodebuild test-without-building` + `iproxy 8100 8100`
+- `src/sequence.py` — YAML preset runner: loads mixed tap/swipe/wait steps, supports random ranges, pause/resume
+- `src/presets/` — YAML preset files (e.g. `brawl_stars.yaml`)
 - `src/gestures/tap.py` — posts W3C pointer tap actions to WDA HTTP API
 - `src/gestures/swipe.py` — posts W3C pointer swipe actions to WDA HTTP API
+- `src/_session.py` — shared WDA session management (`WDA_URL`, `get_or_create_session`)
 - `src/pick_coords.py` — screenshot + browser coordinate picker
 - WDA built from: `~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/`

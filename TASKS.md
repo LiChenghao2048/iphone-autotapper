@@ -21,16 +21,9 @@ Automate playing Brawl Stars on a physical iPhone using WebDriverAgent (WDA) for
 ### Phase 3 — Sequence runner (POC validation)
 - [x] **Task 4** · `src/sequence.py` — generic mixed-gesture sequence runner (`Tap`, `Swipe`, `Wait` steps); loads sequences from YAML preset files (`src/presets/<name>.yaml`); CLI `--preset NAME --count N`; pause/resume support; `src/presets/brawl_stars.yaml` stub included
 
-### Phase 4 — Vision layer
-- [ ] **Task 5** · `src/vision.py` — `find_template(img, template_path, threshold)` returning match locations; tests against fixture images
-- [ ] **Task 6** · `src/vision.py` — `find_by_color(img, hsv_lower, hsv_upper)` and `read_bar_percent(img, region, hsv_range)` for enemy health bar detection and own HP% reading
+### Phase 4+ — Cancelled
 
-### Phase 5 — Bot loop
-- [ ] **Task 7** · `src/bot.py` — main screenshot → vision → act loop; configurable interval; dry-run mode (logs detections, no taps); state machine: `in_match / in_menu / game_over`
-- [ ] **Task 8** · `src/presets/brawl_stars.yaml` — fill in real coordinates and vision constants (HP bar region/HSV, enemy bar HSV); bot attacks when cooldown ready, retreats below HP threshold
-
-### Phase 6 — Enemy targeting
-- [ ] **Task 9** · enemy health bar color detection → compute direction from player centre → swipe toward nearest detected enemy
+Phases 4 (Vision), 5 (Bot loop), and 6 (Enemy targeting) were scoped but not started. The project is stable and complete at Phase 3.
 
 ---
 
