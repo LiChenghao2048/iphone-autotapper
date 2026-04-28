@@ -302,6 +302,21 @@ class TestInterruptibleSleep:
         _interruptible_sleep(0.1)
         assert 0.08 <= time.monotonic() - start <= 0.5
 
+    def test_does_not_raise_when_deadline_passes_mid_loop(self):
+        # Simulates the race where monotonic() overshoots the deadline between
+        # the while-check and the remaining calculation.
+        real_monotonic = time.monotonic
+        calls = []
+        def patched_monotonic():
+            v = real_monotonic()
+            calls.append(v)
+            # On the third call (inside the loop body) return a value far past deadline
+            if len(calls) == 3:
+                return v + 10
+            return v
+        with patch("sequence.time.monotonic", side_effect=patched_monotonic):
+            _interruptible_sleep(0.01)  # must not raise ValueError
+
     def test_extends_sleep_while_paused(self):
         sequence._pause_event.set()
         resumed = threading.Event()
