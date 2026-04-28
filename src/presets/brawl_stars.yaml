@@ -1,23 +1,70 @@
-# Brawl Stars sequence — edit coordinates to match your screen layout.
-# Run with: python3 src/sequence.py --preset brawl_stars
+# Brawl Stars sequence — run with: python3 src/sequence.py --preset brawl_stars
 
 - type: tap
-  x: 700
+  x: 860
   y: 400
 
-- type: wait
-  ms: 500
+- type: tap
+  x: 335
+  y: 250
 
 - type: swipe
-  x1: 215
-  y1: 466
-  x2: 300
-  y2: 400
-  duration_ms: 300
+  x1: 250
+  y1: 350
+  x2: [200, 400]
+  y2: [200, 400]
+  duration_ms: [500, 2000]
 
-- type: wait
-  ms: 2000
+- type: swipe
+  x1: 250
+  y1: 350
+  x2: [200, 400]
+  y2: [200, 400]
+  duration_ms: [500, 2000]
+
+- type: swipe
+  x1: 250
+  y1: 350
+  x2: [200, 400]
+  y2: [200, 400]
+  duration_ms: [500, 2000]
 
 - type: tap
-  x: 700
+  x: 860
   y: 400
+
+- type: swipe
+  x1: 250
+  y1: 350
+  x2: [200, 400]
+  y2: [200, 400]
+  duration_ms: [500, 2000]
+
+- type: tap
+  x: 620
+  y: 100
+
+- type: tap
+  x: 580
+  y: [80, 135]
+
+- type: tap
+  x: 860
+  y: 400
+
+- type: wait
+  ms: [500, 1000]
+
+- type: swipe
+  x1: 250
+  y1: 350
+  x2: [200, 400]
+  y2: [200, 400]
+  duration_ms: [500, 2000]
+
+- type: tap
+  x: 860
+  y: 400
+
+- type: wait
+  ms: [1500, 2500]
