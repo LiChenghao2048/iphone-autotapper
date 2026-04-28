@@ -161,7 +161,7 @@ def _interruptible_sleep(secs: float) -> None:
     """Sleep for secs, waking every 50 ms to check the pause event."""
     deadline = time.monotonic() + secs
     while time.monotonic() < deadline:
-        remaining = deadline - time.monotonic()
+        remaining = max(0.0, deadline - time.monotonic())
         time.sleep(min(0.05, remaining))
         while _pause_event.is_set():
             time.sleep(0.05)
